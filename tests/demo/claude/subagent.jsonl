@@ -1,0 +1,1 @@
+{"type": "assistant", "uuid": "sub-1", "sessionId": "claude-session", "agentId": "agent-1", "isSidechain": true, "cwd": "/work/app", "message": {"id": "sub-msg", "role": "assistant", "content": [{"type": "text", "text": "Subagent review completed."}]}}

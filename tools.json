@@ -1,0 +1,118 @@
+[
+  {
+    "type": "function",
+    "name": "list_sessions",
+    "description": "Start with saved metrics and current analysis. Paginate sessions in the immutable scope, ordered by trace ID.",
+    "strict": true,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "offset": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "offset",
+        "limit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "type": "function",
+    "name": "get_stats",
+    "description": "Exact totals over the entire immutable scope, plus paginated group rows. Overlap measures session spans, not proven parallel execution.",
+    "strict": true,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "group_by": {
+          "type": "string",
+          "enum": [
+            "none",
+            "provider",
+            "directory"
+          ]
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "group_by",
+        "offset",
+        "limit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "type": "function",
+    "name": "search_events",
+    "description": "Literal case-sensitive matching over event text, tool names and arguments. Search samples do not represent all traces.",
+    "strict": true,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "trace_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query",
+        "trace_id",
+        "offset",
+        "limit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "type": "function",
+    "name": "read_events",
+    "description": "Read ordered events; limit=1 and text_offset pages long text_view including tool arguments. Follow next_text_offset and next_offset.",
+    "strict": true,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "trace_id": {
+          "type": "string"
+        },
+        "start_seq": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "text_offset": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "trace_id",
+        "start_seq",
+        "limit",
+        "text_offset"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

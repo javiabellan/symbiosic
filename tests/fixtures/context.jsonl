@@ -1,0 +1,2 @@
+{"timestamp": "2026-11-08T10:01:00Z", "type": "session_meta", "payload": {"id": "context-test", "cwd": "/work/other"}}
+{"timestamp": "2026-11-08T10:02:00Z", "type": "event_msg", "payload": {"type": "error", "error_code": "context_length_exceeded", "message": "Explicit native context limit"}}

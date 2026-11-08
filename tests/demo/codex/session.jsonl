@@ -1,0 +1,17 @@
+{"timestamp":"2026-11-08T10:00:01Z","type":"session_meta","payload":{"id":"codex-session","cwd":"/work/app","source":"cli"}}
+{"timestamp":"2026-11-08T10:00:02Z","type":"turn_context","payload":{"cwd":"/work/app","model":"fixture-model"}}
+{"timestamp":"2026-11-08T10:00:03Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Fix the failing parser test."}]}}
+{"timestamp":"2026-11-08T10:00:03Z","type":"event_msg","payload":{"type":"user_message","message":"Fix the failing parser test."}}
+{"timestamp":"2026-11-08T10:00:04Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I will inspect the failing assertion."}]}}
+{"timestamp":"2026-11-08T10:00:04Z","type":"event_msg","payload":{"type":"agent_message","message":"I will inspect the failing assertion."}}
+{"timestamp":"2026-11-08T10:00:04Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"A visible summary, without encrypted reasoning."}],"encrypted_content":"SANITIZED_ENCRYPTED_BYTES"}}
+{"timestamp":"2026-11-08T10:00:05Z","type":"response_item","payload":{"type":"function_call","call_id":"call-7","name":"exec_command","arguments":"{\"cmd\":\"make test\"}"}}
+{"timestamp":"2026-11-08T10:00:06Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-7","output":{"output":"All tests passed","exit_code":0}}}
+{"timestamp":"2026-11-08T10:00:07Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"output_tokens":40,"cached_input_tokens":50,"reasoning_output_tokens":10,"total_tokens":240}}}}
+{"timestamp":"2026-11-08T10:00:08Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":300,"output_tokens":60,"cached_input_tokens":70,"reasoning_output_tokens":15,"total_tokens":360}}}}
+{"timestamp":"2026-11-08T10:00:09Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20,"output_tokens":5,"cached_input_tokens":0,"reasoning_output_tokens":0,"total_tokens":25}}}}
+{"timestamp":"2026-11-08T10:00:10Z","type":"compacted","payload":{"message":"Context compacted"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>Fixture harness instructions</environment_context>"}]}}
+{"timestamp":"2026-11-08T10:00:11Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"patch-1","name":"apply_patch","input":"*** Begin Patch\n*** End Patch"}}
+{"timestamp":"2026-11-08T10:00:12Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"patch-1","output":"Patch applied"}}
+{"timestamp":"2026-11-08T10:00:13Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The parser tests pass."}]}}
