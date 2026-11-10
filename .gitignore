@@ -5,3 +5,5 @@ traceview
 tests/test_traceview
 tests/test_sanitize
 .DS_Store
+
+.deps/

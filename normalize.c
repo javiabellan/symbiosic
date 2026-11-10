@@ -18,8 +18,7 @@ typedef struct {
     size_t seq, block, offset, line;
     const char *ts, *native_id;
     size_t malformed, unsupported, uncertain, mirror_only;
-    size_t text_bytes;
-    bool recognized, has_responses, too_large;
+    bool recognized, has_responses;
     J *usage_ids, *mirror_contents;
 } Normal;
 static bool is(J *v, const char *s) {
@@ -48,9 +47,6 @@ static J *event(Normal *n, const char *role, const char *kind) {
 static void text_field(Normal *n, J *e, const char *text) {
     if (!text)
         return;
-    n->text_bytes += strlen(text);
-    if (n->text_bytes > MAX_NORMALIZED)
-        n->too_large = true;
     put(n->d, e, "text", js(n->d, text));
 }
 static char *content_text(J *content, Normal *normal) {
@@ -143,11 +139,6 @@ static void usage(Normal *n, J *u, const char *identity) {
 static void args_field(Normal *n, J *e, J *args) {
     if (!args)
         return;
-    char *s = json(args);
-    n->text_bytes += strlen(s);
-    free(s);
-    if (n->text_bytes > MAX_NORMALIZED)
-        n->too_large = true;
     put(n->d, e, "args", copy(n->d, args));
 }
 static void claude(Normal *n, J *r) {
@@ -182,7 +173,7 @@ static void claude(Normal *n, J *r) {
             J *e = event(n, "system", "compaction");
             text_field(n, e, sget(r, "content"));
         } else {
-            J *e = event(n, "system", "metadata");
+            J *e = event(n, "system", *sget(r, "content") ? "message" : "metadata");
             text_field(n, e, sget(r, "content"));
             args_field(n, e, get(r, "compactMetadata"));
         }
@@ -246,6 +237,10 @@ static void codex(Normal *n, J *r) {
             put(n->d, n->meta, "parent_native_session_id",
                 copy(n->d, get(spawn, "parent_thread_id")));
         metadata(n, p);
+        J *base = get(p, "base_instructions");
+        const char *base_text = yyjson_mut_is_str(base) ? str(base) : sget(base, "text");
+        if (*base_text)
+            message(n, "system", base_text, false, false);
         return;
     }
     if (!strcmp(type, "turn_context")) {
@@ -337,6 +332,10 @@ static void codex(Normal *n, J *r) {
             put(n->d, e, "ok", copy(n->d, get(p, "success")));
     } else if (!strcmp(pt, "reasoning")) {
         char *s = content_text(get(p, "summary"), n);
+        if (!*s && get(p, "content")) {
+            free(s);
+            s = content_text(get(p, "content"), n);
+        }
         if (*s)
             text_field(n, event(n, "assistant", "reasoning"), s);
         free(s);
@@ -507,8 +506,12 @@ Trace *normalize(const char *path, const char *provider, Trace *old, char **erro
         *error = xstrdup("Source is not a regular file");
         return NULL;
     }
-    bool oversize = (uint64_t)st.st_size > MAX_NATIVE;
-    size_t size = oversize ? 0 : (size_t)st.st_size;
+    if (st.st_size < 0 || (uint64_t)st.st_size > MAX_FILE_BYTES) {
+        close(fd);
+        *error = xstrdup("Source cannot be represented in this process address space");
+        return NULL;
+    }
+    size_t size = (size_t)st.st_size;
     char *bytes = xmalloc(size + 1);
     size_t got = 0;
     while (got < size) {
@@ -560,19 +563,11 @@ Trace *normalize(const char *path, const char *provider, Trace *old, char **erro
     Row *rows = NULL;
     const char *detected = NULL;
     size_t nr = 0, cap = 0, offset = 0, line = 1;
-    bool longline = false;
     while (offset < got) {
         char *nl = memchr(bytes + offset, '\n', got - offset);
-        if (!nl) {
-            if (got - offset > MAX_LINE)
-                longline = true;
+        if (!nl)
             break;
-        }
         size_t len = (size_t)(nl - (bytes + offset));
-        if (len > MAX_LINE) {
-            longline = true;
-            break;
-        }
         Doc *d = doc_parse(bytes + offset, len);
         if (!d)
             n.malformed++;
@@ -654,14 +649,12 @@ Trace *normalize(const char *path, const char *provider, Trace *old, char **erro
             claude(&n, r);
         else
             codex(&n, r);
-        if (n.too_large)
-            break;
     }
     for (size_t k = 0; k < nr; k++)
         doc_free(rows[k].d);
     free(rows);
     free(bytes);
-    if (!n.recognized && !n.malformed && !oversize && !longline) {
+    if (!n.recognized && !n.malformed) {
         trace_release(t);
         return NULL;
     }
@@ -672,15 +665,10 @@ Trace *normalize(const char *path, const char *provider, Trace *old, char **erro
     put(n.d, diag, "uncertain_speakers", ji(n.d, (int64_t)n.uncertain));
     put(n.d, diag, "mirror_only_records", ji(n.d, (int64_t)n.mirror_only));
     put(n.d, diag, "pending_final_bytes", ji(n.d, (int64_t)(got - offset)));
-    put(n.d, diag, "coverage_incomplete",
-        jb(n.d,
-           n.malformed || n.unsupported || n.uncertain || oversize || longline || n.too_large));
+    put(n.d, diag, "coverage_incomplete", jb(n.d, n.malformed || n.unsupported || n.uncertain));
     const char *ingest_error = !n.recognized && n.malformed
                                    ? "No usable transcript records; malformed complete lines"
-                               : oversize    ? "Native file exceeds 64 MiB"
-                               : longline    ? "Native line exceeds 4 MiB"
-                               : n.too_large ? "Normalized text exceeds 16 MiB"
-                                             : NULL;
+                                   : NULL;
     if (ingest_error) {
         put(n.d, diag, "ingestion_error",
             js(n.d, ingest_error)); /* No partial giant trace masquerades as usable evidence. */
@@ -694,17 +682,6 @@ Trace *normalize(const char *path, const char *provider, Trace *old, char **erro
         }
     }
     stats(&n);
-    char *sized = json(root(n.d));
-    bool envelope_too_large = strlen(sized) > MAX_NORMALIZED;
-    free(sized);
-    if (envelope_too_large && !ingest_error) {
-        put(n.d, diag, "ingestion_error", js(n.d, "Normalized snapshot exceeds 16 MiB"));
-        put(n.d, diag, "coverage_incomplete", jb(n.d, true));
-        n.events = arr(n.d);
-        put(n.d, root(n.d), "events", n.events);
-        n.seq = 0;
-        stats(&n);
-    }
     t->dev = (uint64_t)st.st_dev;
     t->ino = (uint64_t)st.st_ino;
     t->size = (uint64_t)st.st_size;

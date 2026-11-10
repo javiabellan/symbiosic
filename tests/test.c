@@ -30,7 +30,7 @@ static Doc *parse(const char *s) {
 }
 static void fixture(const char *source, const char *target) {
     size_t n;
-    char *e = NULL, *s = read_file(source, MAX_NATIVE, &n, &e);
+    char *e = NULL, *s = read_file(source, MAX_FILE_BYTES, &n, &e);
     CHECK(s);
     CHECK(atomic_write(target, s, n, &e));
     free(s);
@@ -79,14 +79,17 @@ static Transport fake(const char *endpoint, const char *body, const char *key) {
         doc_free(response);
         return (Transport){.status = 200, .body = xstrdup("not json")};
     }
-    if (!strcmp(endpoint, "decisions")) {
-        CHECK(!strcmp(sget(get(root(request), "prompt_cache_options"), "mode"), "explicit"));
+    bool compat = !strcmp(endpoint, "chat/completions");
+    if (!strcmp(endpoint, "decisions") || compat) {
+        if (!compat)
+            CHECK(!strcmp(sget(get(root(request), "prompt_cache_options"), "mode"), "explicit"));
         J *answers = arr(response);
         put(response, r, "model", js(response, "gpt-6-luna"));
         put(response, r, "answers", answers);
         size_t i, n;
         J *q;
-        yyjson_mut_arr_foreach(get(root(request), "questions"), i, n, q) {
+        yyjson_mut_arr_foreach(get(compat ? root(test_app->rubric) : root(request), "questions"), i,
+                               n, q) {
             J *a = obj(response);
             const char *name = sget(q, "name"), *type = sget(q, "type");
             put(response, a, "name", js(response, name));
@@ -174,6 +177,17 @@ static Transport fake(const char *endpoint, const char *body, const char *key) {
     put(response, usage, "input_tokens_details", details);
     put(response, details, "cached_tokens", ji(response, mode == 3 ? 10 : 0));
     put(response, details, "cache_write_tokens", ji(response, 0));
+    if (compat) {
+        char *answer = json(r);
+        J *choices = arr(response), *choice = obj(response), *message = obj(response);
+        put(response, message, "content", js(response, answer));
+        free(answer);
+        put(response, choice, "message", message);
+        add(choices, choice);
+        put(response, r, "choices", choices);
+        put(response, usage, "prompt_tokens", ji(response, 100));
+        put(response, usage, "completion_tokens", ji(response, 10));
+    }
     char *serialized = json(r);
     doc_free(response);
     doc_free(request);
@@ -242,13 +256,39 @@ static void test_normalizers(App *a, const char *cp, const char *xp) {
     Trace *context = norm("tests/fixtures/context.jsonl", "codex", NULL);
     CHECK(integer(get(get(meta(context), "stats"), "context_limits")) == 1);
     trace_release(context);
+    char *system_path = fmt("%s/system.jsonl", a->cfg.codex_root);
+    char *system_error = NULL;
+    const char *system_record = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"system-test\","
+                                "\"base_instructions\":{\"text\":\"RECORDED_BASE_SYSTEM\"}}}\n";
+    CHECK(atomic_write(system_path, system_record, strlen(system_record), &system_error));
+    Trace *system_trace = norm(system_path, "codex", NULL);
+    CHECK(contains(system_trace, "RECORDED_BASE_SYSTEM"));
+    trace_release(system_trace);
+    unlink(system_path);
+    free(system_path);
     char *huge = fmt("%s/huge.jsonl", a->cfg.codex_root);
-    int fd = open(huge, O_CREAT | O_WRONLY, 0600);
-    CHECK(fd >= 0);
-    CHECK(ftruncate(fd, MAX_NATIVE + 1) == 0);
-    close(fd);
+    Buf huge_record = {0};
+    buf_add(&huge_record, "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":"
+                          "\"user\",\"content\":\"");
+    char *huge_text = xmalloc(17u * 1024 * 1024 + 1);
+    memset(huge_text, 'x', 17u * 1024 * 1024);
+    huge_text[17u * 1024 * 1024] = 0;
+    buf_add(&huge_record, huge_text);
+    free(huge_text);
+    buf_add(&huge_record, "\"}}\n");
+    char *write_error = NULL;
+    CHECK(atomic_write(huge, huge_record.s, huge_record.n, &write_error));
+    buf_free(&huge_record);
     Trace *oversize = norm(huge, "codex", NULL);
-    CHECK(*sget(get(meta(oversize), "diagnostics"), "ingestion_error"));
+    CHECK(!*sget(get(meta(oversize), "diagnostics"), "ingestion_error"));
+    CHECK(oversize->bytes > 16u * 1024 * 1024);
+    CHECK(trace_save(a, oversize, &write_error));
+    char *saved = fmt("%s/traces/%s.jsonl", a->cfg.data_dir, oversize->id);
+    Trace *reloaded = trace_load(saved, &write_error);
+    CHECK(reloaded && reloaded->bytes > 16u * 1024 * 1024);
+    trace_release(reloaded);
+    unlink(saved);
+    free(saved);
     trace_release(oversize);
     unlink(huge);
     free(huge);
@@ -337,23 +377,42 @@ static void test_projection_limits(App *a) {
     strcpy(local.id, original->id);
     J *events = get(root(local.doc), "events"), *e = yyjson_mut_arr_get(events, 0);
     put(local.doc, e, "kind", js(local.doc, "message"));
-    char *large = xmalloc(MAX_REQUEST + 1);
-    memset(large, 'x', MAX_REQUEST);
-    large[MAX_REQUEST] = 0;
+    char *large = xmalloc((128u * 1024) + 1);
+    memset(large, 'x', (128u * 1024));
+    large[(128u * 1024)] = 0;
     put(local.doc, e, "text", js(local.doc, large));
     char *body = NULL, *error = NULL;
     Doc *coverage = projection(a, &local, &body, &error);
-    CHECK(!coverage && !body && error && strstr(error, "too_large"));
-    free(error);
-    error = NULL;
+    CHECK(coverage && body && !error);
+    CHECK(strlen(body) > (128u * 1024));
+    CHECK(integer(get(root(coverage), "level")) == 6);
+    free(body);
+    doc_free(coverage);
+    fidelity_free(local.fidelity);
+    local.fidelity = NULL;
     put(local.doc, e, "kind", js(local.doc, "tool_result"));
     coverage = projection(a, &local, &body, &error);
     CHECK(coverage && body && !error);
-    CHECK(yyjson_mut_arr_size(get(root(coverage), "shortened_results")) == 1);
-    CHECK(strstr(body, "original UTF-8 bytes"));
-    CHECK(strlen(sget(e, "text")) == MAX_REQUEST);
+    size_t overhead = (size_t)integer(get(root(coverage), "overhead_tokens"));
     free(body);
     doc_free(coverage);
+    ModelConfig saved = a->cfg.decision;
+    a->cfg.decision.input_limit = overhead + fidelity_tokens(local.fidelity, 3) + 1024;
+    coverage = projection(a, &local, &body, &error);
+    CHECK(coverage && body && !error);
+    CHECK(integer(get(root(coverage), "level")) == 3);
+    CHECK(yyjson_mut_arr_size(get(root(coverage), "shortened_results")) == 1);
+    CHECK(strstr(body, "original UTF-8 bytes"));
+    CHECK(strlen(sget(e, "text")) == (128u * 1024));
+    free(body);
+    doc_free(coverage);
+    a->cfg.decision.input_limit = overhead + fidelity_tokens(local.fidelity, 1) + 1023;
+    coverage = projection(a, &local, &body, &error);
+    CHECK(!coverage && !body && error && strstr(error, "context_limit"));
+    free(error);
+    error = NULL;
+    a->cfg.decision = saved;
+    fidelity_free(local.fidelity);
     free(large);
     doc_free(local.doc);
     Doc *invalid = parse("{\"answers\":[],\"usage\":{\"input_tokens\":5}}");
@@ -362,6 +421,160 @@ static void test_projection_limits(App *a) {
     CHECK(!values && error);
     free(error);
     doc_free(invalid);
+}
+static void test_fidelity(App *a) {
+    CHECK(token_count("Hello, world!") == 4);
+    Doc *d = parse("{\"meta\":{\"revision\":1,\"diagnostics\":{},\"stats\":{}},\"events\":[]}");
+    Trace t = {.doc = d};
+    strcpy(t.id, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    const char *roles[] = {"user", "assistant", "tool", "assistant", "assistant", "system"};
+    const char *kinds[] = {"message",   "tool_call", "tool_result",
+                           "reasoning", "message",   "message"};
+    const char *texts[] = {"USER_MARKER", "", "", "THINK_MARKER", "ANSWER_MARKER", "SYSTEM_MARKER"};
+    for (int i = 0; i < 6; i++) {
+        J *v = obj(d);
+        char *id = fmt("e%d", i);
+        put(d, v, "id", js(d, id));
+        free(id);
+        put(d, v, "seq", ji(d, i));
+        put(d, v, "role", js(d, roles[i]));
+        put(d, v, "kind", js(d, kinds[i]));
+        put(d, v, "text", js(d, texts[i]));
+        if (i == 1) {
+            put(d, v, "tool", js(d, "CALL_MARKER"));
+            put(d, v, "args", js(d, "ARG_MARKER"));
+        }
+        if (i == 2) {
+            Buf text = {0};
+            buf_add(&text, "HEAD_MARKER");
+            for (int j = 0; j < 4000; j++)
+                buf_add(&text, "漢🙂");
+            buf_add(&text, "TAIL_MARKER");
+            put(d, v, "text", js(d, text.s));
+            buf_free(&text);
+        }
+        add(get(root(d), "events"), v);
+    }
+    Fidelity *f = fidelity_prepare(&t);
+    CHECK(f == fidelity_prepare(&t));
+    size_t totals[6];
+    for (int l = 1; l <= 6; l++)
+        totals[l - 1] = fidelity_tokens(f, l);
+    for (int l = 1; l <= 6; l++) {
+        CHECK(fidelity_select(totals, totals[l - 1]) == l);
+        Doc *coverage = NULL;
+        char *text = fidelity_render(&t, l, &coverage);
+        CHECK(strstr(text, "USER_MARKER") && strstr(text, "ANSWER_MARKER"));
+        CHECK((strstr(text, "HEAD_MARKER") != NULL) == (l >= 2));
+        CHECK((strstr(text, "CALL_MARKER") != NULL) == (l >= 3));
+        CHECK((strstr(text, "middle omitted") != NULL) == (l == 2 || l == 3));
+        CHECK((strstr(text, "THINK_MARKER") != NULL) == (l >= 5));
+        CHECK((strstr(text, "SYSTEM_MARKER") != NULL) == (l == 6));
+        if (l == 6) {
+            char *sys = strstr(text, "SYSTEM_MARKER");
+            CHECK(sys < strstr(text, "USER_MARKER"));
+            CHECK(!strstr(sys + 1, "SYSTEM_MARKER"));
+        }
+        CHECK(boolean(get(root(coverage), "incomplete")) == (l < 6));
+        CHECK(token_count(text) <= totals[l - 1] + 8);
+        free(text);
+        doc_free(coverage);
+    }
+    CHECK(!fidelity_select(totals, totals[0] - 1));
+    size_t nonmonotonic[] = {10, 30, 20, 25, 30, 30};
+    CHECK(fidelity_select(nonmonotonic, 26) == 4);
+    CHECK(fidelity_select(nonmonotonic, 30) == 6);
+    fidelity_free(f);
+    doc_free(d);
+    (void)a;
+}
+static int catalog_page;
+static Transport catalog_fake(const char *endpoint, const char *body, const char *key) {
+    (void)key;
+    CHECK(!body);
+    const char *json_text;
+    if (!strcmp(endpoint, "models?limit=1000")) {
+        catalog_page++;
+        json_text = "{\"data\":[{\"id\":\"claude-first\",\"max_input_tokens\":200000}],\"has_"
+                    "more\":true,\"last_id\":\"claude-first\"}";
+    } else if (!strcmp(endpoint, "models?limit=1000&after_id=claude-first")) {
+        catalog_page++;
+        json_text = "{\"data\":[{\"id\":\"claude-second\",\"max_input_tokens\":1000000}],\"has_"
+                    "more\":false}";
+    } else {
+        CHECK(!strcmp(endpoint, "models"));
+        json_text =
+            "{\"data\":[{\"id\":\"gpt-6-luna\"},{\"id\":\"unknown-limits\"},{\"id\":\"routed-"
+            "model\",\"context_length\":1000000,\"top_provider\":{\"context_length\":200000}}]}";
+    }
+    return (Transport){.status = 200, .body = xstrdup(json_text)};
+}
+static void test_catalog(App *a) {
+    TestTransport saved = test_transport;
+    test_transport = catalog_fake;
+    char *error = NULL;
+    Doc *models = provider_models(&a->cfg, AI_OPENAI, &error);
+    CHECK(models && !error);
+    J *list = get(root(models), "models");
+    CHECK(integer(get(yyjson_mut_arr_get(list, 0), "input_limit")) == 1050000);
+    CHECK(yyjson_mut_is_null(get(yyjson_mut_arr_get(list, 1), "input_limit")));
+    CHECK(integer(get(yyjson_mut_arr_get(list, 2), "context_limit")) == 200000);
+    doc_free(models);
+    models = provider_models(&a->cfg, AI_ANTHROPIC, &error);
+    CHECK(models && !error && catalog_page == 2);
+    CHECK(yyjson_mut_arr_size(get(root(models), "models")) == 2);
+    doc_free(models);
+    test_transport = saved;
+}
+static void test_providers(App *a) {
+    Doc *req = parse("{\"model\":\"fixture\",\"instructions\":\"Investigate\",\"input\":[{\"role\":"
+                     "\"user\",\"content\":\"Hello\"},{\"type\":\"function_call\",\"call_id\":"
+                     "\"c1\",\"name\":\"get_stats\",\"arguments\":\"{}\"},{\"type\":\"function_"
+                     "call_output\",\"call_id\":\"c1\",\"output\":\"evidence\"}],\"tools\":[]}");
+    ModelConfig saved = a->cfg.chat;
+    for (int p = AI_ANTHROPIC; p < AI_PROVIDERS; p++) {
+        a->cfg.chat.provider = (Provider)p;
+        const char *endpoint = NULL;
+        Doc *wire = provider_request(&a->cfg, false, root(req), &endpoint);
+        CHECK(!strcmp(endpoint, p == AI_ANTHROPIC ? "messages" : "chat/completions"));
+        char *body = json(root(wire));
+        CHECK(strstr(body, "get_stats") && strstr(body, "evidence"));
+        free(body);
+        doc_free(wire);
+        Doc *raw =
+            parse(p == AI_ANTHROPIC
+                      ? "{\"content\":[{\"type\":\"text\",\"text\":\"answer\"},{\"type\":\"tool_"
+                        "use\",\"id\":\"c2\",\"name\":\"read_events\",\"input\":{}}],\"usage\":{"
+                        "\"input_tokens\":10,\"output_tokens\":2}}"
+                      : "{\"choices\":[{\"message\":{\"content\":\"answer\",\"tool_calls\":[{"
+                        "\"id\":\"c2\",\"function\":{\"name\":\"read_events\",\"arguments\":\"{}\"}"
+                        "}]}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}");
+        Doc *response = provider_response((Provider)p, false, endpoint, root(raw));
+        CHECK(yyjson_mut_arr_size(get(root(response), "output")) == 2);
+        CHECK(integer(get(get(root(response), "usage"), "input_tokens")) == 10);
+        doc_free(response);
+        doc_free(raw);
+    }
+    a->cfg.chat = saved;
+    doc_free(req);
+    int status;
+    Doc *settings = ai_settings(a), *saved_settings = doc_clone(settings);
+    CHECK(!strstr(sget(root(settings), "key"), "test-only"));
+    put(settings, get(root(settings), "chat"), "context_limit", ji(settings, 1));
+    Doc *result = ai_settings_update(a, root(settings), false, &status);
+    CHECK(status == 400);
+    doc_free(result);
+    a->ai_busy = true;
+    result = ai_settings_update(a, root(saved_settings), false, &status);
+    CHECK(status == 409);
+    doc_free(result);
+    a->ai_busy = false;
+    result = ai_settings_update(a, root(saved_settings), false, &status);
+    CHECK(status == 200);
+    doc_free(result);
+    CHECK(ai_settings_load(a, NULL));
+    doc_free(saved_settings);
+    doc_free(settings);
 }
 static void test_ai(App *a) {
     Snapshot snapshot = {0};
@@ -480,7 +693,7 @@ static void test_chat_restart(App *a) {
     doc_free(scope);
     char *path = fmt("%s/chats/%s.jsonl", a->cfg.data_dir, id);
     size_t n;
-    char *audit = read_file(path, MAX_SNAPSHOT, &n, &e);
+    char *audit = read_file(path, MAX_FILE_BYTES, &n, &e);
     CHECK(audit && strstr(audit, "\"kind\":\"snapshot\"") && strstr(audit, "\"kind\":\"tool\"") &&
           strstr(audit, "function_call_output"));
     free(audit);
@@ -488,7 +701,7 @@ static void test_chat_restart(App *a) {
     Doc *tail = parse("{\"kind\":\"tail_test\"}");
     CHECK(audit_append(a, id, tail, &e));
     doc_free(tail);
-    audit = read_file(path, MAX_SNAPSHOT, &n, &e);
+    audit = read_file(path, MAX_FILE_BYTES, &n, &e);
     CHECK(!strstr(audit, "{incomplete"));
     free(audit);
     free(path);
@@ -527,6 +740,71 @@ static void concurrent_tick(uv_timer_t *timer) {
         uv_timer_stop(timer);
         uv_close((uv_handle_t *)timer, NULL);
     }
+}
+static int budget_calls;
+static Transport budget_fake(const char *endpoint, const char *body, const char *key) {
+    (void)key;
+    CHECK(!strcmp(endpoint, "responses"));
+    budget_calls++;
+    free(sent_body);
+    sent_body = xstrdup(body);
+    return (Transport){
+        .status = 200,
+        .body = xstrdup("{\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{"
+                        "\"type\":\"output_text\",\"text\":\"Direct answer, zero tools.\"}]}]}")};
+}
+static void test_chat_budget(App *a) {
+    Trace *original = a->traces.v[0];
+    Trace t = {.doc = doc_clone(original->doc)};
+    strcpy(t.id, original->id);
+    J *e = obj(t.doc);
+    put(t.doc, e, "kind", js(t.doc, "tool_result"));
+    put(t.doc, e, "role", js(t.doc, "tool"));
+    put(t.doc, e, "id", js(t.doc, "large-tool"));
+    Buf large = {0};
+    for (int i = 0; i < 12000; i++)
+        buf_add(&large, "long tool output with symbols 漢🙂 ");
+    put(t.doc, e, "text", js(t.doc, large.s));
+    buf_free(&large);
+    add(get(root(t.doc), "events"), e);
+    Trace *traces[] = {&t};
+    Snapshot snapshot = {.traces = {.v = traces, .n = 1}};
+    Doc *scope = parse("{\"type\":\"all\"}");
+    int status;
+    Doc *ack = create_chat(a, root(scope), &status);
+    CHECK(status == 200);
+    Doc *chat = docs_find(&a->chats, "id", sget(root(ack), "chat_id"));
+    char *error = NULL;
+    TestTransport saved_transport = test_transport;
+    test_transport = budget_fake;
+    Doc *result = chat_turn(a, chat, &snapshot, "Review the whole trace", &error);
+    CHECK(result && !error && !get(root(result), "turn_error"));
+    CHECK(budget_calls == 1);
+    CHECK(strlen(sent_body) > 128u * 1024);
+    CHECK(integer(get(get(root(result), "coverage"), "level")) == 6);
+    size_t level3 =
+        (size_t)integer(yyjson_mut_arr_get(get(get(root(result), "coverage"), "level_tokens"), 2));
+    doc_free(result);
+    ModelConfig saved = a->cfg.chat;
+    a->cfg.chat.input_limit = level3 + 1024;
+    result = chat_turn(a, chat, &snapshot, "Review the whole trace", &error);
+    CHECK(result && !error);
+    CHECK(integer(get(get(root(result), "coverage"), "level")) == 3);
+    CHECK(strstr(sent_body, "middle omitted"));
+    doc_free(result);
+    put(chat, root(chat), "coverage", obj(chat));
+    a->cfg.chat.input_limit = 1025;
+    result = chat_turn(a, chat, &snapshot, "Review the whole trace", &error);
+    CHECK(result && !error && get(root(result), "turn_error"));
+    CHECK(budget_calls == 2);
+    CHECK(!get(root(result), "coverage"));
+    doc_free(result);
+    a->cfg.chat = saved;
+    test_transport = saved_transport;
+    fidelity_free(t.fidelity);
+    doc_free(t.doc);
+    doc_free(ack);
+    doc_free(scope);
 }
 static void test_concurrency(App *a, const char *cp) {
     char *old_model = a->cfg.decision_model;
@@ -600,9 +878,13 @@ int main(void) {
     CHECK(!valid_id("../../.env"));
     test_normalizers(&a, cp, xp);
     test_tools(&a);
+    test_fidelity(&a);
+    test_providers(&a);
+    test_catalog(&a);
     test_projection_limits(&a);
     test_ai(&a);
     test_chat_restart(&a);
+    test_chat_budget(&a);
     test_concurrency(&a, cp);
     Trace *real_c = norm("tests/fixtures/claude-sanitized-native.jsonl", "claude", NULL),
           *real_x = norm("tests/fixtures/codex-sanitized-native.jsonl", "codex", NULL);

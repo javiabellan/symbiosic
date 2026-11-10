@@ -396,7 +396,23 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
     J *in = root(input);
     if (get_method && !strcmp(path, "/api/state"))
         out = state_doc(a);
-    else if (get_method && !strcmp(path, "/api/trace")) {
+    else if (get_method && !strcmp(path, "/api/settings"))
+        out = ai_settings(a);
+    else if (post && (!strcmp(path, "/api/settings") || !strcmp(path, "/api/provider")))
+        out = ai_settings_update(a, in, !strcmp(path, "/api/provider"), &status);
+    else if (get_method && !strcmp(path, "/api/models")) {
+        Provider provider;
+        if (!provider_parse(sget(q, "provider"), &provider)) {
+            status = 400;
+            out = error_doc("bad_provider", "Unknown AI provider");
+        } else {
+            enqueue_models(a, provider, send, ctx);
+            doc_free(query);
+            doc_free(input);
+            free(path);
+            return;
+        }
+    } else if (get_method && !strcmp(path, "/api/trace")) {
         size_t start, limit, offset;
         const char *id = sget(q, "id");
         if (!valid_id(id) || !query_int(q, "start_seq", 0, &start) ||

@@ -9,15 +9,18 @@
 #include <sys/stat.h>
 #include <stdatomic.h>
 
-#define TV_VERSION 1
+#define TV_VERSION 2
 #define MAX_SOURCES 1000
-#define MAX_NATIVE (64u * 1024 * 1024)
-#define MAX_LINE (4u * 1024 * 1024)
-#define MAX_NORMALIZED (16u * 1024 * 1024)
-#define MAX_REQUEST (128u * 1024)
+#define MAX_FILE_BYTES (SIZE_MAX - 1)
+#define MAX_SCHEMA_BYTES (128u * 1024)
 #define MAX_TOOL (16u * 1024)
-#define MAX_SNAPSHOT (256u * 1024 * 1024)
 #define PRICE_DATE "2026-11-08"
+typedef enum { AI_OPENAI, AI_ANTHROPIC, AI_OPENROUTER, AI_GEMINI, AI_PROVIDERS } Provider;
+typedef struct {
+    Provider provider;
+    size_t input_limit, context_limit, output_limit;
+} ModelConfig;
+typedef struct Fidelity Fidelity;
 typedef yyjson_mut_doc Doc;
 typedef yyjson_mut_val J;
 typedef struct {
@@ -29,6 +32,8 @@ typedef struct {
     int port;
     uint64_t poll_ms;
     double rate;
+    char *provider_keys[AI_PROVIDERS]; /* OpenAI uses key above; UI keys stay in memory. */
+    ModelConfig decision, chat;
 } Config;
 typedef struct Trace {
     atomic_uint refs;
@@ -38,6 +43,7 @@ typedef struct Trace {
     uint64_t dev, ino, size;
     int64_t mtime_sec, mtime_nsec;
     size_t bytes;
+    Fidelity *fidelity; /* Lazily prepared by the serialized AI worker. */
 } Trace;
 typedef struct {
     Trace **v;
@@ -157,6 +163,27 @@ Doc *interpret_answers(J *response, J *questions, bool incomplete, char **error)
 Transport api_post(Config *cfg, const char *endpoint, const char *body);
 Doc *chat_turn(App *a, Doc *chat, Snapshot *s, const char *text, char **error);
 void transport_free(Transport *t);
+const char *provider_name(Provider p);
+bool provider_parse(const char *name, Provider *p);
+const char *provider_key(Config *c, Provider p);
+Transport provider_http(Config *c, Provider p, const char *endpoint, const char *body);
+Doc *provider_request(Config *c, bool decision, J *request, const char **endpoint);
+Doc *provider_response(Provider p, bool decision, const char *endpoint, J *response);
+Doc *provider_models(Config *c, Provider p, char **error);
+Doc *ai_settings(App *a);
+Doc *ai_settings_update(App *a, J *in, bool connection, int *status);
+bool ai_settings_load(App *a, char **error);
+bool tokenizer_init(char **error);
+void tokenizer_destroy(void);
+size_t token_count(const char *text);
+size_t token_json(J *value);
+size_t model_budget(ModelConfig *model);
+Fidelity *fidelity_prepare(Trace *t);
+void fidelity_free(Fidelity *f);
+size_t fidelity_tokens(Fidelity *f, int level);
+int fidelity_select(const size_t totals[6], size_t budget);
+char *fidelity_render(Trace *t, int level, Doc **coverage);
+void enqueue_models(App *a, Provider provider, Reply reply, void *ctx);
 
 void api_route(App *a, const char *method, const char *url, const char *body, Reply reply,
                void *ctx);

@@ -189,6 +189,7 @@ void trace_retain(Trace *t) {
 void trace_release(Trace *t) {
     if (t && atomic_fetch_sub(&t->refs, 1) == 1) {
         free(t->path);
+        fidelity_free(t->fidelity);
         doc_free(t->doc);
         free(t);
     }
@@ -201,7 +202,7 @@ void traces_free(Traces *a) {
 }
 Trace *trace_load(const char *path, char **error) {
     size_t n;
-    char *s = read_file(path, MAX_NORMALIZED + 8 * 1024 * 1024, &n, error);
+    char *s = read_file(path, MAX_FILE_BYTES, &n, error);
     if (!s)
         return NULL;
     Doc *d = doc_new();
@@ -299,7 +300,7 @@ static void load_docs(App *a, const char *dir, Docs *out, bool nested) {
         } else if (S_ISREG(st.st_mode) && suffix(e->d_name, ".json")) {
             char *err = NULL;
             size_t n;
-            char *s = read_file(p, MAX_SNAPSHOT, &n, &err);
+            char *s = read_file(p, MAX_FILE_BYTES, &n, &err);
             Doc *j = s ? doc_parse(s, n) : NULL;
             if (j) {
                 if (!strncmp(dir, "analysis", 8)) {
@@ -489,7 +490,8 @@ static void scan_dir(Scan *s, const char *path, const char *provider, unsigned d
             if (!old && same_stat(ignored, &st)) {
                 trace_retain(ignored);
                 traces_push(&s->ignored, ignored);
-            } else if (same_stat(old, &st)) {
+            } else if (same_stat(old, &st) && integer(get(get(root(old->doc), "meta"),
+                                                          "normalizer_version")) == TV_VERSION) {
                 trace_retain(old);
                 traces_push(s->out, old);
             } else {
@@ -607,7 +609,7 @@ void snapshot_free(Snapshot *s) {
 bool snapshot_take(App *a, J *scope, Snapshot *s, char **error) {
     memset(s, 0, sizeof(*s));
     const char *type = sget(scope, "type");
-    size_t bytes = 0;
+    (void)error; /* Snapshot references share immutable trace storage. */
     for (size_t i = 0; i < a->traces.n; i++) {
         Trace *t = a->traces.v[i];
         J *m = get(root(t->doc), "meta");
@@ -616,12 +618,6 @@ bool snapshot_take(App *a, J *scope, Snapshot *s, char **error) {
                   (!strcmp(type, "directory") && !strcmp(sget(m, "cwd"), sget(scope, "cwd")));
         if (!in)
             continue;
-        if (bytes + t->bytes > MAX_SNAPSHOT) {
-            *error = xstrdup("Turn snapshot exceeds 256 MiB; select a directory or trace");
-            snapshot_free(s);
-            return false;
-        }
-        bytes += t->bytes;
         trace_retain(t);
         traces_push(&s->traces, t);
     }
@@ -631,15 +627,6 @@ bool snapshot_take(App *a, J *scope, Snapshot *s, char **error) {
         if (!d)
             continue;
         Doc *index = analysis_index(d);
-        char *serialized = json(root(index));
-        bytes += strlen(serialized);
-        free(serialized);
-        if (bytes > MAX_SNAPSHOT) {
-            doc_free(index);
-            *error = xstrdup("Turn snapshot exceeds 256 MiB; select a directory or trace");
-            snapshot_free(s);
-            return false;
-        }
         docs_push(&s->analyses, index);
     }
     return true;

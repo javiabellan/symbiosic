@@ -6,7 +6,7 @@
 #include <time.h>
 #include <signal.h>
 
-typedef enum { TASK_ESTIMATE, TASK_BATCH, TASK_CHAT } TaskKind;
+typedef enum { TASK_ESTIMATE, TASK_BATCH, TASK_CHAT, TASK_MODELS } TaskKind;
 struct Task {
     uv_work_t work;
     App *app;
@@ -122,6 +122,10 @@ static void finish_batch(Task *t) {
 static void ai_worker(uv_work_t *w) {
     Task *t = w->data;
     App *a = t->app;
+    if (t->kind == TASK_MODELS) {
+        t->result = provider_models(&a->cfg, (Provider)t->index, &t->error);
+        return;
+    }
     if (t->kind == TASK_ESTIMATE) {
         t->result = estimate_build(a, &t->snapshot, t->selection, &t->error);
         return;
@@ -190,7 +194,12 @@ static void ai_done(uv_work_t *w, int status) {
         put(t->job, root(t->job), "error", js(t->job, t->error));
         persist_job(a, t->job);
     }
-    if (t->kind == TASK_ESTIMATE) {
+    if (t->kind == TASK_MODELS) {
+        t->reply(t->reply_ctx, t->result ? 200 : 502,
+                 t->result
+                     ? doc_clone(t->result)
+                     : error_doc("models_failed", t->error ? t->error : "Unable to load models"));
+    } else if (t->kind == TASK_ESTIMATE) {
         if (t->result) {
             docs_push(&a->quotes, doc_clone(t->result));
             Doc *preview = doc_clone(t->result);
@@ -255,6 +264,16 @@ void ai_kick(App *a) {
     if (rc)
         ai_done(&t->work, rc);
 }
+void enqueue_models(App *a, Provider provider, Reply reply, void *ctx) {
+    Task *t = xcalloc(1, sizeof(*t));
+    t->app = a;
+    t->kind = TASK_MODELS;
+    t->index = (size_t)provider;
+    t->reply = reply;
+    t->reply_ctx = ctx;
+    queue(a, t);
+    ai_kick(a);
+}
 void enqueue_estimate(App *a, Doc *selection, Reply reply, void *ctx) {
     Task *t = xcalloc(1, sizeof(*t));
     t->app = a;
@@ -262,7 +281,7 @@ void enqueue_estimate(App *a, Doc *selection, Reply reply, void *ctx) {
     t->selection = selection;
     t->reply = reply;
     t->reply_ctx = ctx;
-    /* Quotes retain immutable trace references without the chat-only 256 MiB cap. */
+    /* Quotes retain immutable trace references; AI inputs are token-budgeted later. */
     bool all = boolean(get(root(selection), "all"));
     J *ids = get(root(selection), "trace_ids");
     for (size_t i = 0; i < a->traces.n; i++) {
@@ -301,9 +320,13 @@ Doc *start_analysis(App *a, const char *id, int *status) {
         *status = 409;
         return error_doc("expired_quote", "Quote expired; refresh the estimate");
     }
-    if (!*a->cfg.key && integer(get(root(quote), "eligible"))) {
+    Provider quoted_provider;
+    if (!provider_parse(sget(root(quote), "ai_provider"), &quoted_provider))
+        quoted_provider = AI_OPENAI;
+    if (!*provider_key(&a->cfg, quoted_provider) && integer(get(root(quote), "eligible"))) {
         *status = 409;
-        return error_doc("missing_key", "OPENAI_API_KEY is missing; paid operations are disabled");
+        return error_doc("missing_key",
+                         "Selected provider API key is missing; paid operations are disabled");
     }
     char job_id[33];
     if (!new_id(job_id)) {
@@ -404,10 +427,10 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status) {
         *status = 404;
         return error_doc("not_found", "Chat not found");
     }
-    if (!*a->cfg.key) {
+    if (!*provider_key(&a->cfg, a->cfg.chat.provider)) {
         *status = 409;
         return error_doc("missing_key",
-                         "OPENAI_API_KEY is missing; chat has separate paid API usage");
+                         "Selected provider API key is missing; chat has separate paid API usage");
     }
     const char *last = sget(root(chat), "latest_job");
     Doc *prev = docs_find(&a->jobs, "id", last);
@@ -486,7 +509,9 @@ Doc *state_doc(App *a) {
     put(d, r, "stats", copy(d, get(root(groups), "stats")));
     put(d, r, "groups", copy(d, get(root(groups), "items")));
     doc_free(groups);
-    put(d, r, "key_available", jb(d, *a->cfg.key != 0));
+    put(d, r, "key_available", jb(d, *provider_key(&a->cfg, a->cfg.chat.provider) != 0));
+    put(d, r, "decision_key_available",
+        jb(d, *provider_key(&a->cfg, a->cfg.decision.provider) != 0));
     put(d, r, "decision_model", js(d, a->cfg.decision_model));
     put(d, r, "chat_model", js(d, a->cfg.chat_model));
     put(d, r, "price_checked", js(d, PRICE_DATE));
@@ -559,7 +584,7 @@ bool app_init(App *a, char **error) {
         return false;
     }
     size_t n;
-    char *s = read_file("rubric.json", MAX_REQUEST, &n, error);
+    char *s = read_file("rubric.json", MAX_SCHEMA_BYTES, &n, error);
     if (!s)
         return false;
     a->rubric = doc_parse(s, n);
@@ -568,7 +593,7 @@ bool app_init(App *a, char **error) {
         *error = xstrdup("Invalid rubric.json");
         return false;
     }
-    s = read_file("tools.json", MAX_REQUEST, &n, error);
+    s = read_file("tools.json", MAX_SCHEMA_BYTES, &n, error);
     if (!s)
         return false;
     a->tools = doc_parse(s, n);
@@ -580,7 +605,7 @@ bool app_init(App *a, char **error) {
     a->html = read_file("web/index.html", 1024 * 1024, &n, error);
     if (!a->html)
         return false;
-    return store_open(a, error);
+    return tokenizer_init(error) && store_open(a, error) && ai_settings_load(a, error);
 }
 void app_destroy(App *a) {
     store_close(a);
@@ -589,6 +614,7 @@ void app_destroy(App *a) {
     free(a->html);
     free(a->discovery_error);
     config_free(&a->cfg);
+    tokenizer_destroy();
     curl_global_cleanup();
 }
 #ifndef TRACEVIEW_TEST

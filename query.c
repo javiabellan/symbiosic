@@ -24,7 +24,9 @@ Doc *analysis_best(Docs *a, Trace *t) {
         J *r = root(a->v[i]);
         if (strcmp(sget(r, "trace_id"), t->id))
             continue;
-        bool match = integer(get(r, "revision")) == rev;
+        bool match =
+            integer(get(r, "revision")) == rev &&
+            integer(get(r, "normalizer_version")) == integer(get(meta(t), "normalizer_version"));
         if (!best || (match && !exact) ||
             (match == exact &&
              strcmp(sget(r, "created_at"), sget(root(best), "created_at")) >= 0)) {
@@ -47,7 +49,10 @@ static J *analysis_summary(Doc *d, Doc *analysis, Trace *t) {
     J *cov = get(v, "coverage");
     if (yyjson_mut_is_obj(cov))
         yyjson_mut_obj_remove_str(cov, "input_event_ids");
-    put(d, v, "outdated", jb(d, integer(get(r, "revision")) != integer(get(meta(t), "revision"))));
+    put(d, v, "outdated",
+        jb(d, integer(get(r, "revision")) != integer(get(meta(t), "revision")) ||
+                  integer(get(r, "normalizer_version")) !=
+                      integer(get(meta(t), "normalizer_version"))));
     return v;
 }
 Doc *trace_summary(Trace *t, Docs *analyses) {
@@ -142,7 +147,9 @@ static void accumulate(Doc *d, J *r, Trace *t, Docs *analyses) {
     Doc *an = analysis_best(analyses, t);
     if (!an)
         return;
-    bool outdated = integer(get(root(an), "revision")) != integer(get(m, "revision"));
+    bool outdated =
+        integer(get(root(an), "revision")) != integer(get(m, "revision")) ||
+        integer(get(root(an), "normalizer_version")) != integer(get(m, "normalizer_version"));
     inc(d, r, outdated ? "analysis_outdated" : "analysis_current", 1);
     if (outdated)
         return;

@@ -1,6 +1,6 @@
-Build a local, single-user proof of concept named `traceview`: ingest Claude Code and Codex logs, normalize them into readable JSONL, persist everything in files, analyze individual traces with OpenAI Decisions, and investigate traces through a tool-using chat. Use C17, libcurl, yyjson, libuv, llhttp, and vanilla HTML/CSS/JavaScript.
+Build a local, single-user proof of concept named `traceview`: ingest Claude Code and Codex logs, normalize them into readable JSONL, persist everything in files, analyze individual traces with OpenAI Decisions, and investigate traces through a tool-using chat. Use C17, libcurl, yyjson, libuv, llhttp, tiktoken-c, and vanilla HTML/CSS/JavaScript.
 
-Optimize for understandable code and a demonstrable end-to-end workflow. This specification intentionally bounds data size and omits production infrastructure. API contracts and initial prices below were checked on November 8, 2026.
+Optimize for understandable code and a demonstrable end-to-end workflow. This specification omits production infrastructure; AI inputs use model token budgets instead of fixed trace byte caps. API contracts and initial prices below were checked on November 8, 2026.
 
 # Runtime and project structure
 
@@ -15,6 +15,8 @@ Use these modules, merging adjacent modules if convenient:
 | `store.c` | JSON/JSONL reads, atomic replacement, discovery, in-memory catalog |
 | `normalize.c` | Two provider adapters and deterministic statistics |
 | `ai.c` | libcurl, estimates, Decisions, Responses tool loop |
+| `fidelity.c` | Local o200k_base tokenizer, cached section counts and six-level views |
+| `providers.c` | Provider adapters, model discovery and settings |
 | `app.h` | Shared structs and declarations |
 | `web/index.html` | Markup, small inline stylesheet, small inline script |
 | `rubric.json` | Versioned Decisions questions |
@@ -81,7 +83,7 @@ Use source device/inode, size, and nanosecond mtime to detect changes. For a cha
 
 Read at most the size captured at open. If replacement or truncation makes the read inconsistent, defer it to the next poll. Count malformed complete lines and unsupported record types; retain usable records and mark coverage incomplete. If the normalized candidate matches the current snapshot, keep the revision. Source disappearance leaves the last snapshot browsable with `source_missing=true`.
 
-PoC bounds: 1,000 source files, 64 MiB per native file, 4 MiB per line, 16 MiB normalized text per trace. Oversized inputs get a visible ingestion error; never silently drop excess text. Full changed-file parsing is an intentional simplicity tradeoff; efficient incremental ingestion is outside this version.
+PoC discovery bound: 1,000 source files. Native files, lines, normalized traces and chat scopes have no fixed byte cap; they must fit in process memory. Full changed-file parsing is an intentional simplicity tradeoff; efficient incremental ingestion is outside this version.
 
 The first JSONL line:
 
@@ -192,9 +194,9 @@ Example of the actual wire structure; the implementation inserts the complete ru
 }
 ```
 
-Use a text input containing chronological normalized events and IDs. Retain human/assistant messages, tool names, arguments, outcomes, and relevant system markers. Omit reasoning text and routine metadata from this projection. Shorten each tool-result text above 2 KiB to its first and last 1 KiB on UTF-8 boundaries, with an explicit omission marker and original length. Other event text is not shortened. Preserve full normalized text locally.
+Use six cumulative views of the same trace: (1) user/assistant messages, (2) clipped tool outputs, (3) tool-call names/arguments, (4) full tool outputs replacing clips, (5) recorded reasoning, (6) recorded system context once at the start. Retain all recorded turns. Tool calls are optional, and omitted events do not imply no activity. Clip tool outputs at 2,500 Unicode code points (1,250 head + 1,250 tail), plus a counted omission marker. Retain full normalized evidence locally.
 
-The entire serialized request must fit 128 KiB. If it does not, report `too_large` and do not call OpenAI. No automatic chunking, summaries, or sample-based whole-trace judgments. Save projection coverage: input event IDs, excluded kinds, shortened results, parse errors, and byte counts.
+Count each serialized section and its full/clipped variants locally with tiktoken-c v0.9.1 o200k_base ordinary encoding. Cache counts per immutable trace; sum them for six levels. Apply the same heuristic to every provider. Select the largest fitting token total, with higher fidelity winning ties. Budget against min(input limit, context window minus reserved output), less 1,024 framing tokens and the request's instructions, rubric/tools and live history. If level 01 cannot fit, report required versus available tokens without sending a request. Save level, all six counts, selected count, budget, included IDs, omitted kinds, clips, diagnostics and byte counts.
 
 Explicit cache mode with no breakpoints disables provider prompt caching. Use local saved results for reuse, keeping cost accounting simple. [Decisions contract](https://developers.openai.com/api/reference/resources/decisions/methods/create) and [caching and pricing](https://developers.openai.com/api/docs/guides/decisions).
 
@@ -220,9 +222,8 @@ Analyze acts on the selected trace. Analyze all acts on all imported traces, reg
 
 7. Reusing Start for the same quote returns the existing job; it does not queue duplicates.
 
-Estimate locally, without an API call or tokenizer dependency. Let B be the UTF-8 byte length of the serialized request:\
-`tokens_estimated = ceil(B / 4)`.\
-Display an illustrative range `ceil(B / 6)` to `ceil(B / 2)`; it is not a guaranteed bound and may be poor for non-English text or code. Including the complete request includes question text and JSON overhead. Label all estimates approximate.
+Estimate locally with tiktoken-c, without an API call:\
+`tokens_estimated = selected_trace_section_tokens + request_overhead_tokens` using local o200k_base counts. These are heuristic estimates for all providers, not exact provider billing counts.
 
 For the default Decisions configuration:\
 `estimated_usd = tokens_estimated * 0.10 / 1_000_000`.\
@@ -238,7 +239,7 @@ Do not automatically retry paid requests after timeouts or ambiguous failures: t
 
 Use Responses API with local function execution. No MCP server or agent SDK. One chat has an immutable scope: `trace` with a trace ID, `directory` with its exact normalized cwd, or `all`. Changing scope starts a different chat.
 
-At the beginning of each user turn, freeze the current normalized contents and analysis references for traces in scope. Cap this turn snapshot at 256 MiB; reject larger scopes with a request to select a directory or trace. Read-only tools use this turn snapshot even if ingestion advances. Store the trace ID/revision list and retrieved evidence in the chat audit. Across turns refresh the snapshot; tell the model when referenced revisions changed.
+At the beginning of each user turn, freeze the current normalized contents and analysis references for traces in scope. Retain shared immutable trace references without a fixed scope byte cap. Read-only tools use this turn snapshot even if ingestion advances. Store the trace ID/revision list and retrieved evidence in the chat audit. Across turns refresh the snapshot; tell the model when referenced revisions changed.
 
 Provide only four function tools:
 
@@ -263,9 +264,9 @@ For minimal orchestration, use non-streaming requests with `model:CHAT_MODEL`, `
 
 On each Responses result, preserve all output items for the current tool loop. Dispatch every function call, parse its JSON arguments, and append a `function_call_output` with the matching `call_id` and JSON-string result. Resubmit history and repeat until assistant text or a limit. Extract text from `output[].content[]` items with `type:"output_text"`; the raw REST response is not an SDK `output_text` convenience property.
 
-Limit each user turn to six tool rounds and one final tools-disabled response. Cap each serialized Responses request at 128 KiB and cumulative tool-result text at 64 KiB. If a limit prevents a final request, return an honest local limit message. Do not silently discard evidence mid-loop.
+Limit each user turn to six tool rounds and one final tools-disabled response. Re-select a common trace fidelity level across the frozen scope for each request, counting growing tool results and history against the selected LLM budget. No fixed request or cumulative-evidence byte cap applies. If no level fits, return an explicit context-limit error without a provider call or silently dropping turns.
 
-Persist all chat messages for display. For the next turn send only the last six completed user/assistant exchanges, capped at 16 KiB by dropping whole oldest exchanges; disclose this bounded memory in the UI. Prior tool bodies are not automatically resent: tools can retrieve current evidence again. Never leave orphaned tool outputs in API history.
+Persist all chat messages for display. For the next turn send complete prior user/assistant exchanges, counting them in the model input budget. Prior tool bodies are not automatically resent: tools can retrieve current evidence again. Never leave orphaned tool outputs in API history.
 
 Save tool activity, API usage, errors and the final answer in files. New turns require no Decisions calls. Chat has its own paid API usage, separate from the analysis quote. [Responses tool protocol](https://developers.openai.com/api/docs/guides/function-calling).
 
@@ -280,6 +281,10 @@ Serve only fixed routes. Use JSON responses with `Content-Length`, close the con
 | GET /api/trace?id=ID&start_seq=N&limit=N&text_offset=N | Current trace metadata, saved analysis and bounded events |
 | POST /api/estimate | `{"trace_ids":["ID"]}` or `{"all":true}`; returns saved quote and preview |
 | POST /api/analyze | `{"quote_id":"ID"}`; returns job ID with HTTP 202 |
+| GET /api/settings | Redacted provider/model choices and limits |
+| POST /api/settings | Save validated model choices, limits and input rate while AI is idle |
+| POST /api/provider | Set/clear an in-memory provider key; never return or persist it |
+| GET /api/models?provider=NAME | Fetch model list on the serialized AI worker; fill known limits |
 | GET /api/job?id=ID | State, counts, per-trace status, estimate and reported usage |
 | POST /api/chat | `{"scope":{"type":"trace","id":"ID"}}`; returns chat ID; directory scope uses cwd, all has no target |
 | GET /api/chats | Saved chats with scopes and timestamps |
@@ -300,7 +305,7 @@ Keep the UI in one HTML file. Do not rebuild the chat DOM on every catalog poll;
 
 This PoC trusts one local user and has no account system or remote access. Still bind to loopback, reject unexpected Host headers, reject cross-origin mutations, and require application/json for POST requests. Do not enable CORS. Accept browser requests only from the exact configured local origin; command-line requests without Origin are allowed.
 
-Use fixed routes and validated opaque IDs; never serve DATA_DIR, .env, or arbitrary paths. Keep data directories private and create sensitive files with owner-only permissions. Never log the API key. Inform the user in the UI that analysis and chat send selected content to OpenAI; no automated secret redaction is implemented.
+Use fixed routes and validated opaque IDs; never serve DATA_DIR, .env, or arbitrary paths. Keep data directories private and create sensitive files with owner-only permissions. Never log the API key. Inform the user in the UI that analysis and chat send selected content to the configured AI provider; no automated secret redaction is implemented.
 
 libcurl verifies TLS, has a ten-second connect timeout and 120-second overall timeout, and caps received bodies at 8 MiB. Do not follow redirects with credentials. Return useful provider error messages without request contents or secrets. No automatic retries of paid calls.
 
@@ -341,3 +346,10 @@ Completion criteria:
 12. A changed file does not require reparsing unrelated files, and network latency never blocks HTTP event processing.
 
 The result is a demonstrable file-backed application, not a general observability platform.
+
+
+## Provider and long-trace update (November 10, 2026)
+
+Both model roles default to OpenAI gpt-6-luna with a 1,050,000-token context/input ceiling; output reserves are 4,096 for analysis and 1,200 for chat. Input limits can be set separately from context windows. The UI supports OpenAI, Anthropic, OpenRouter, and Gemini model discovery. Unknown limits require user entry rather than assuming Luna's capacity. UI keys are session-only; model preferences persist in owner-only ai-settings.json. Native OpenAI Decisions remains specific to Luna. Other analysis models use a JSON rubric prompt and validated answers; their total cost is unresolved because generation output prices are not configured. Providers and endpoints are frozen in quotes and included in cache identity.
+
+The former 64 MiB native-file, 4 MiB line, 16 MiB normalized-trace and 256 MiB chat-scope caps are removed. Ingestion still reads whole files and keeps traces plus tokenizer caches in memory. Local HTTP bodies, tool pagination and provider-response caps remain transport/resource protections. `make deps` installs a checksum-pinned tiktoken-c static library; normal execution tokenizes offline. No paid provider calls are needed for the regression suite.

@@ -370,6 +370,15 @@ bool config_load(Config *c, char **error) {
     c->codex_root = absolute_path(ENV("CODEX_ROOT", "~/.codex/sessions"));
     c->decision_model = xstrdup(ENV("DECISION_MODEL", "gpt-6-luna"));
     c->chat_model = xstrdup(ENV("CHAT_MODEL", "gpt-6-luna"));
+    c->decision = (ModelConfig){AI_OPENAI, 1050000, 1050000, 4096};
+    c->chat = (ModelConfig){AI_OPENAI, 1050000, 1050000, 1200};
+    if (strcmp(c->decision_model, "gpt-6-luna"))
+        c->decision.input_limit = c->decision.context_limit = 0;
+    if (strcmp(c->chat_model, "gpt-6-luna"))
+        c->chat.input_limit = c->chat.context_limit = 0;
+    c->provider_keys[AI_ANTHROPIC] = xstrdup(ENV("ANTHROPIC_API_KEY", ""));
+    c->provider_keys[AI_OPENROUTER] = xstrdup(ENV("OPENROUTER_API_KEY", ""));
+    c->provider_keys[AI_GEMINI] = xstrdup(ENV("GEMINI_API_KEY", ""));
     char *end;
     const char *s = ENV("PORT", "4317");
     long port = strtol(s, &end, 10);
@@ -395,6 +404,8 @@ invalid:
 }
 void config_free(Config *c) {
     free(c->key);
+    for (int i = 0; i < AI_PROVIDERS; i++)
+        free(c->provider_keys[i]);
     free(c->data_dir);
     free(c->claude_root);
     free(c->codex_root);

@@ -15,10 +15,11 @@ static const char *instructions =
     "use event IDs in place of sequence. "
     "Follow pagination and next_text_offset when necessary. Unknown results are unknown, not "
     "failures or successes. "
-    "Prior tool bodies are not in your memory; retrieve current evidence again. You receive at "
-    "most six previous completed exchanges, "
-    "bounded to 16 KiB. Each turn has a fresh immutable snapshot; previously cited revisions may "
-    "have changed.";
+    "Recorded trace evidence is supplied in one of six fidelity views selected for your input "
+    "budget. "
+    "Omitted tool events do not imply no tools ran. Prior chat tool bodies are not in memory; "
+    "retrieve current evidence again. Each turn has a fresh immutable snapshot; previously cited "
+    "revisions may have changed.";
 
 static void message_add(Doc *d, J *messages, const char *role, const char *text, bool completed) {
     J *m = obj(d);
@@ -45,41 +46,20 @@ static bool audit(App *a, Doc *chat, Doc *records, const char *kind, J *data, ch
 }
 static J *bounded_history(Doc *d, J *messages, const char *text) {
     J *input = arr(d);
-    size_t n = yyjson_mut_arr_size(messages), ends[6], starts[6], pairs = 0, bytes = 0;
-    for (size_t i = n; i > 1 && pairs < 6;) {
-        J *assistant = yyjson_mut_arr_get(messages, i - 1),
-          *user = yyjson_mut_arr_get(messages, i - 2);
-        if (strcmp(sget(assistant, "role"), "assistant") || strcmp(sget(user, "role"), "user") ||
-            !boolean(get(assistant, "completed")) || !boolean(get(user, "completed"))) {
-            i--;
+    size_t n = yyjson_mut_arr_size(messages);
+    for (size_t i = 0; i + 1 < n; i++) {
+        J *user = yyjson_mut_arr_get(messages, i), *assistant = yyjson_mut_arr_get(messages, i + 1);
+        if (strcmp(sget(user, "role"), "user") || strcmp(sget(assistant, "role"), "assistant") ||
+            !boolean(get(user, "completed")) || !boolean(get(assistant, "completed")))
             continue;
-        }
-        size_t size = strlen(sget(assistant, "text")) + strlen(sget(user, "text")) + 100;
-        if (bytes + size > 16384)
-            break;
-        starts[pairs] = i - 2;
-        ends[pairs] = i - 1;
-        pairs++;
-        bytes += size;
-        i -= 2;
-    }
-    for (size_t k = pairs; k > 0; k--) {
-        size_t indices[] = {starts[k - 1], ends[k - 1]};
-        for (size_t j = 0; j < 2; j++) {
-            J *m = yyjson_mut_arr_get(messages, indices[j]), *v = obj(d);
-            put(d, v, "role", copy(d, get(m, "role")));
-            put(d, v, "content", copy(d, get(m, "text")));
+        J *pair[] = {user, assistant};
+        for (int j = 0; j < 2; j++) {
+            J *v = obj(d);
+            put(d, v, "role", copy(d, get(pair[j], "role")));
+            put(d, v, "content", copy(d, get(pair[j], "text")));
             add(input, v);
         }
-    }
-    for (;;) {
-        char *serialized = json(input);
-        size_t size = strlen(serialized);
-        free(serialized);
-        if (size <= 16384 || !yyjson_mut_arr_size(input))
-            break;
-        yyjson_mut_arr_remove_first(input);
-        yyjson_mut_arr_remove_first(input);
+        i++;
     }
     J *user = obj(d);
     put(d, user, "role", js(d, "user"));
@@ -87,10 +67,65 @@ static J *bounded_history(Doc *d, J *messages, const char *text) {
     add(input, user);
     return input;
 }
+/* Count the live conversation, instructions and tool schemas separately from
+ * cached trace sections. Re-select on every tool round as evidence grows. */
+static Doc *budget_request(App *a, Snapshot *s, Doc *request, Doc **coverage, const char **endpoint,
+                           char **error) {
+    J *input = get(root(request), "input"), *evidence = obj(request);
+    put(request, evidence, "role", js(request, "user"));
+    put(request, evidence, "content", js(request, ""));
+    yyjson_mut_arr_prepend(input, evidence);
+    Doc *wire = provider_request(&a->cfg, false, root(request), endpoint);
+    size_t overhead = token_json(root(wire));
+    doc_free(wire);
+    size_t totals[6] = {0}, budget = model_budget(&a->cfg.chat);
+    for (int l = 0; l < 6; l++)
+        totals[l] = overhead;
+    for (size_t i = 0; i < s->traces.n; i++) {
+        Fidelity *f = fidelity_prepare(s->traces.v[i]);
+        for (int l = 1; l <= 6; l++)
+            totals[l - 1] += fidelity_tokens(f, l);
+    }
+    int level = fidelity_select(totals, budget);
+    if (!level) {
+        *error =
+            fmt("Model input limit reached: level 01 plus conversation and tool evidence needs %zu "
+                "estimated tokens; %zu available after output/framing reserves. Choose a larger "
+                "model, start a new chat, or narrow the scope. No request sent.",
+                totals[0], budget);
+        return NULL;
+    }
+    Doc *cov = doc_new();
+    J *traces = arr(cov), *levels = arr(cov);
+    put(cov, root(cov), "level", ji(cov, level));
+    put(cov, root(cov), "input_tokens", ji(cov, (int64_t)totals[level - 1]));
+    put(cov, root(cov), "input_budget", ji(cov, (int64_t)budget));
+    put(cov, root(cov), "traces", traces);
+    put(cov, root(cov), "level_tokens", levels);
+    for (int l = 0; l < 6; l++)
+        add(levels, ji(cov, (int64_t)totals[l]));
+    Buf content = {0};
+    for (size_t i = 0; i < s->traces.n; i++) {
+        Doc *tc = NULL;
+        char *text = fidelity_render(s->traces.v[i], level, &tc);
+        buf_add(&content, text);
+        free(text);
+        put(tc, root(tc), "trace_id", js(tc, s->traces.v[i]->id));
+        add(traces, copy(cov, root(tc)));
+        doc_free(tc);
+    }
+    put(request, evidence, "content",
+        js(request, content.s ? content.s : "No traces in this scope."));
+    buf_free(&content);
+    wire = provider_request(&a->cfg, false, root(request), endpoint);
+    *coverage = cov;
+    return wire;
+}
 Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **error) {
     Doc *chat = doc_clone(original), *history = doc_new(), *records = doc_new();
     yyjson_mut_doc_set_root(records, arr(records));
     yyjson_mut_obj_remove_str(root(chat), "turn_error");
+    yyjson_mut_obj_remove_str(root(chat), "coverage");
     J *messages = get(root(chat), "messages");
     J *input = bounded_history(history, messages, text);
     yyjson_mut_doc_set_root(history, input);
@@ -133,7 +168,7 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
         put(req, reason, "effort", js(req, "none"));
         put(req, r, "reasoning", reason);
         put(req, r, "parallel_tool_calls", jb(req, false));
-        put(req, r, "max_output_tokens", ji(req, 1200));
+        put(req, r, "max_output_tokens", ji(req, (int64_t)a->cfg.chat.output_limit));
         put(req, r, "input", copy(req, input));
         Buf prompt = {0};
         buf_add(&prompt, instructions);
@@ -146,11 +181,24 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
         put(req, r, "tools", round < 6 ? copy(req, root(a->tools)) : arr(req));
         if (round == 6)
             put(req, r, "tool_choice", js(req, "none"));
+        const char *endpoint = NULL;
+        char *budget_error = NULL;
+        Doc *coverage = NULL;
+        Doc *wire = budget_request(a, s, req, &coverage, &endpoint, &budget_error);
+        if (!wire) {
+            answer = budget_error;
+            put(chat, root(chat), "turn_error", js(chat, answer));
+            doc_free(req);
+            break;
+        }
+        put(chat, root(chat), "coverage", copy(chat, root(coverage)));
+        audit_ok = audit(a, chat, records, "coverage", root(coverage), &audit_error);
+        doc_free(coverage);
+        doc_free(req);
+        req = wire;
+        r = root(req);
         char *body = json(r);
-        if (strlen(body) > MAX_REQUEST) {
-            answer = xstrdup(
-                "Local request limit reached (128 KiB). I cannot make a supported final claim from "
-                "a truncated history. Select a narrower scope or ask a smaller question.");
+        if (!audit_ok) {
             free(body);
             doc_free(req);
             break;
@@ -161,10 +209,12 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
             doc_free(req);
             break;
         }
-        Transport transport = api_post(&a->cfg, "responses", body);
+        Transport transport = provider_http(&a->cfg, a->cfg.chat.provider, endpoint, body);
         free(body);
         doc_free(req);
-        Doc *response = transport.body ? doc_parse(transport.body, strlen(transport.body)) : NULL;
+        Doc *raw = transport.body ? doc_parse(transport.body, strlen(transport.body)) : NULL;
+        Doc *response = provider_response(a->cfg.chat.provider, false, endpoint, root(raw));
+        doc_free(raw);
         Doc *receipt = doc_new();
         put(receipt, root(receipt), "http_status", ji(receipt, transport.status));
         put(receipt, root(receipt), "raw_response", js(receipt, transport.body));
@@ -178,7 +228,7 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
         if (transport.error || !response) {
             answer = xstrdup(transport.error
                                  ? transport.error
-                                 : "OpenAI returned invalid JSON; no automatic retry was made.");
+                                 : "Provider returned invalid JSON; no automatic retry was made.");
             put(chat, root(chat), "turn_error", js(chat, answer));
             doc_free(response);
             transport_free(&transport);
@@ -191,7 +241,7 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
         }
         J *output = get(root(response), "output");
         if (!yyjson_mut_is_arr(output)) {
-            answer = xstrdup("OpenAI response had no output array; no automatic retry was made.");
+            answer = xstrdup("Provider response had no output array; no automatic retry was made.");
             put(chat, root(chat), "turn_error", js(chat, answer));
             doc_free(response);
             transport_free(&transport);
@@ -255,10 +305,6 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
                 free(tool_text);
                 doc_free(result);
             }
-            if (tool_bytes > 64u * 1024)
-                answer = xstrdup("The 64 KiB evidence limit for this turn was reached. Retrieved "
-                                 "evidence is saved in the audit, but no final API request was "
-                                 "made. Narrow the question to continue.");
         }
         buf_free(&text_out);
         doc_free(response);
