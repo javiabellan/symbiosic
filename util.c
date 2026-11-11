@@ -370,8 +370,8 @@ bool config_load(Config *c, char **error) {
     c->codex_root = absolute_path(ENV("CODEX_ROOT", "~/.codex/sessions"));
     c->decision_model = xstrdup(ENV("DECISION_MODEL", "gpt-6-luna"));
     c->chat_model = xstrdup(ENV("CHAT_MODEL", "gpt-6-luna"));
-    c->decision = (ModelConfig){AI_OPENAI, 1050000, 1050000, 4096};
-    c->chat = (ModelConfig){AI_OPENAI, 1050000, 1050000, 1200};
+    c->decision = (ModelConfig){.provider=AI_OPENAI, .input_limit=1050000, .context_limit=1050000, .output_limit=4096, .thinking="none"};
+    c->chat = (ModelConfig){.provider=AI_OPENAI, .input_limit=1050000, .context_limit=1050000, .output_limit=8192, .thinking="none"};
     if (strcmp(c->decision_model, "gpt-6-luna"))
         c->decision.input_limit = c->decision.context_limit = 0;
     if (strcmp(c->chat_model, "gpt-6-luna"))

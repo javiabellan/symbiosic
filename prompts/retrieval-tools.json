@@ -1,0 +1,4 @@
+[
+  {"type":"function","name":"list_content","description":"List the selected directory's frozen file index or trace metadata. Follow next_offset for the next page.","strict":true,"parameters":{"type":"object","properties":{"offset":{"type":"integer","minimum":0}},"required":["offset"],"additionalProperties":false}},
+  {"type":"function","name":"read_content","description":"Read a UTF-8 byte page from a selected file or trace. For a trace use an empty path. For directories use an exact relative path from list_content. Binary files return metadata and a small hex header. Follow next_offset to continue.","strict":true,"parameters":{"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer","minimum":0}},"required":["path","offset"],"additionalProperties":false}}
+]

@@ -524,6 +524,33 @@ static void scan_dir(Scan *s, const char *path, const char *provider, unsigned d
 static int trace_cmp(const void *a, const void *b) {
     return strcmp((*(Trace *const *)a)->id, (*(Trace *const *)b)->id);
 }
+
+static void collect_title(Doc *titles, J *row) {
+    const char *id=*sget(row,"id")?sget(row,"id"):sget(row,"sessionId");
+    const char *title=*sget(row,"thread_name")?sget(row,"thread_name"):*sget(row,"customTitle")?sget(row,"customTitle"):*sget(row,"title")?sget(row,"title"):sget(row,"summary");
+    if(*id&&*title)put(titles,root(titles),id,js(titles,title));
+}
+static void read_title_index(Doc *titles,const char *path,bool lines) {
+    char *error=NULL;size_t size;char *text=read_file(path,8u*1024*1024,&size,&error);free(error);if(!text)return;
+    if(lines){char *line=text;while(*line){char *end=strchr(line,'\n');if(!end)break;Doc *d=doc_parse(line,(size_t)(end-line));collect_title(titles,root(d));doc_free(d);line=end+1;}}
+    else{Doc *d=doc_parse(text,size);size_t i,n;J *v;yyjson_mut_arr_foreach(get(root(d),"entries"),i,n,v)collect_title(titles,v);doc_free(d);}free(text);
+}
+static void apply_titles(App *a,Traces *traces) {
+    Doc *titles=doc_new(),*seen=doc_new();char *parent=xstrdup(a->cfg.codex_root),*slash=strrchr(parent,'/');if(slash)*slash=0;
+    char *path=fmt("%s/session_index.jsonl",parent);read_title_index(titles,path,true);free(path);free(parent);
+    for(size_t i=0;i<traces->n;i++){
+        Trace *t=traces->v[i];if(strcmp(sget(get(root(t->doc),"meta"),"provider"),"claude"))continue;
+        parent=xstrdup(t->path);slash=strrchr(parent,'/');if(slash)*slash=0;
+        if(!get(root(seen),parent)){put(seen,root(seen),parent,jb(seen,true));path=fmt("%s/sessions-index.json",parent);read_title_index(titles,path,false);free(path);}free(parent);
+    }
+    for(size_t i=0;i<traces->n;i++){
+        Trace *t=traces->v[i];J *m=get(root(t->doc),"meta");const char *title=sget(root(titles),sget(m,"native_session_id"));
+        if(*title&&strcmp(title,sget(m,"title"))){Trace *replacement=trace_clone(t);put(replacement->doc,get(root(replacement->doc),"meta"),"title",js(replacement->doc,title));char *error=NULL;
+            if(trace_save(a,replacement,&error)){traces->v[i]=replacement;trace_release(t);}else trace_release(replacement);free(error);
+        }
+    }
+    doc_free(titles);doc_free(seen);
+}
 void discover(App *a, Traces *in, Traces *out, char **error) {
     Scan s = {.a = a, .in = in, .out = out, .error = error};
     scan_dir(&s, a->cfg.claude_root, "claude", 0);
@@ -598,6 +625,7 @@ void discover(App *a, Traces *in, Traces *out, char **error) {
             }
         }
     }
+    apply_titles(a,out);
     qsort(out->v, out->n, sizeof(*out->v), trace_cmp);
     traces_free(&a->ignored_sources);
     a->ignored_sources = s.ignored;

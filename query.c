@@ -10,7 +10,7 @@ Doc *analysis_index(Doc *analysis) {
     if (boolean(get(root(d), "result_not_saved")))
         return d;
     const char *keys[] = {"request",  "request_body",   "raw_response",
-                          "response", "rubric_content", "estimate"};
+                          "response", "rubric_content", "estimate", "rounds", "detection_response"};
     for (size_t i = 0; i < sizeof(keys) / sizeof(*keys); i++)
         yyjson_mut_obj_remove_str(root(d), keys[i]);
     yyjson_mut_obj_remove_str(get(root(d), "coverage"), "input_event_ids");
@@ -22,7 +22,7 @@ Doc *analysis_best(Docs *a, Trace *t) {
     int64_t rev = integer(get(meta(t), "revision"));
     for (size_t i = 0; i < a->n; i++) {
         J *r = root(a->v[i]);
-        if (strcmp(sget(r, "trace_id"), t->id))
+        if (get(r,"error") || strcmp(sget(r,"engine"),"symbiosic-v1") || strcmp(sget(r, "trace_id"), t->id))
             continue;
         bool match =
             integer(get(r, "revision")) == rev &&
@@ -42,7 +42,7 @@ static J *analysis_summary(Doc *d, Doc *analysis, Trace *t) {
     J *r = root(analysis), *v = obj(d);
     const char *keys[] = {
         "id",       "revision",           "created_at",       "model",   "values", "usage",
-        "cost_usd", "pricing_unresolved", "result_not_saved", "coverage"};
+        "cost_usd", "pricing_unresolved", "result_not_saved", "coverage", "result", "domain", "domain_name", "model_config", "ai_provider", "estimated_usd", "maximum_usd", "engine", "calls"};
     for (size_t i = 0; i < sizeof(keys) / sizeof(*keys); i++)
         put(d, v, keys[i], copy(d, get(r, keys[i])));
     /* Projection event IDs stay in saved analyses, not every compact catalog row. */
@@ -61,7 +61,7 @@ Doc *trace_summary(Trace *t, Docs *analyses) {
     const char *keys[] = {"trace_id",
                           "revision",
                           "provider",
-                          "native_session_id",
+                          "native_session_id", "title", "model", "thinking", "model_provider", "context_window",
                           "cwd",
                           "parent_trace_id",
                           "parent_native_session_id",
@@ -561,5 +561,15 @@ Doc *tool_run(Snapshot *s, const char *name, J *args) {
     }
     put(d, root(d), "total_matches", ji(d, (int64_t)found));
     bound_items(d, offset, found);
+    return d;
+}
+
+Doc *trace_overview(Trace *t) {
+    Doc *d=doc_new();J *items=arr(d);put(d,root(d),"items",items);size_t i,n;J *v;
+    yyjson_mut_arr_foreach(get(root(t->doc),"events"),i,n,v){
+        const char *kind=sget(v,"kind");if(strcmp(kind,"message")&&strcmp(kind,"reasoning")&&strcmp(kind,"tool_call")&&strcmp(kind,"tool_result"))continue;
+        J *row=obj(d);const char *keys[]={"seq","role","kind","tool","ts","tokens","duration_seconds"};for(size_t k=0;k<7;k++)put(d,row,keys[k],copy(d,get(v,keys[k])));
+        add(items,row);
+    }
     return d;
 }

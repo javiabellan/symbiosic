@@ -1,0 +1,4 @@
+---
+{"name": "deep-learning", "description": "Deep Learning", "metadata": {"detection": "PyTorch, TensorFlow, neural networks, training loops, validation, ground truth and evaluation."}}
+---
+Review tensor shapes, device and dtype handling, gradient flow, optimizer and scheduler steps, loss definitions, train/eval modes, dataset splits, ground truth quality, checkpoints, reproducibility and evaluation. Look for leakage and misleading metrics; suggest focused diagnostics.

@@ -9,7 +9,7 @@
 #include <sys/stat.h>
 #include <stdatomic.h>
 
-#define TV_VERSION 2
+#define TV_VERSION 3
 #define MAX_SOURCES 1000
 #define MAX_FILE_BYTES (SIZE_MAX - 1)
 #define MAX_SCHEMA_BYTES (128u * 1024)
@@ -19,6 +19,9 @@ typedef enum { AI_OPENAI, AI_ANTHROPIC, AI_OPENROUTER, AI_GEMINI, AI_PROVIDERS }
 typedef struct {
     Provider provider;
     size_t input_limit, context_limit, output_limit;
+    char thinking[16];
+    double input_rate, output_rate;
+    bool pricing_known;
 } ModelConfig;
 typedef struct Fidelity Fidelity;
 typedef yyjson_mut_doc Doc;
@@ -70,7 +73,7 @@ typedef struct App {
     Traces traces, ignored_sources;
     Docs analyses, quotes, jobs, chats;
     Task *head, *tail;
-    Doc *rubric, *tools;
+    Doc *tools, *domains, *prompts;
     char *html;
     char *discovery_error;
     void *connections;
@@ -156,10 +159,10 @@ Doc *events_page(Trace *t, size_t start, size_t limit, size_t text_offset);
 Doc *analysis_best(Docs *a, Trace *t);
 Doc *analysis_index(Doc *analysis);
 
-Doc *projection(App *a, Trace *t, char **body, char **error);
+
 Doc *estimate_build(App *a, Snapshot *s, Doc *selection, char **error);
 Doc *analyze_entry(App *a, J *quote, J *entry, Docs *cache, char **error);
-Doc *interpret_answers(J *response, J *questions, bool incomplete, char **error);
+
 Transport api_post(Config *cfg, const char *endpoint, const char *body);
 Doc *chat_turn(App *a, Doc *chat, Snapshot *s, const char *text, char **error);
 void transport_free(Transport *t);
@@ -184,6 +187,19 @@ size_t fidelity_tokens(Fidelity *f, int level);
 int fidelity_select(const size_t totals[6], size_t budget);
 char *fidelity_render(Trace *t, int level, Doc **coverage);
 void enqueue_models(App *a, Provider provider, Reply reply, void *ctx);
+bool prompts_load(App *a, char **error);
+char *prompt_render(App *a, const char *name, J *vars, char **error);
+Doc *domains_update(App *a, J *in, int *status);
+bool model_config_parse(J *v, ModelConfig *m);
+J *model_config_json(Doc *d, ModelConfig *m, const char *id);
+bool directory_allowed(App *a, const char *cwd);
+Doc *directory_manifest(App *a, const char *cwd, char **error);
+Doc *directory_page(App *a, const char *cwd, const char *path, size_t offset, char **error);
+Doc *directory_read(const char *cwd, const char *path, size_t offset, size_t limit, J *expected);
+Doc *analysis_for_scope(App *a, J *scope);
+Doc *review_chat_turn(App *a, Doc *chat, Snapshot *s, const char *text, char **error);
+void enqueue_directory(App *a, Doc *selection, Reply reply, void *ctx);
+Doc *trace_overview(Trace *t);
 
 void api_route(App *a, const char *method, const char *url, const char *body, Reply reply,
                void *ctx);

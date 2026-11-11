@@ -1,0 +1,4 @@
+---
+{"name": "low-level-engineering", "description": "Low Level Engineering", "metadata": {"detection": "C, C++, Rust, assembly, embedded systems, operating systems and reverse engineering."}}
+---
+Review memory and resource ownership, undefined behavior, concurrency, integer bounds, ABI assumptions, hardware constraints, portability and performance. Require concrete evidence for security or correctness claims and suggest sanitizer or targeted validation commands where appropriate.

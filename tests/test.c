@@ -9,7 +9,6 @@
 #include <time.h>
 
 static int checks = 0, calls = 0, chat_round = 0, mode = 0;
-static App *test_app;
 static char *sent_body;
 static char cited_id[33];
 #define CHECK(x)                                                                                   \
@@ -79,46 +78,14 @@ static Transport fake(const char *endpoint, const char *body, const char *key) {
         doc_free(response);
         return (Transport){.status = 200, .body = xstrdup("not json")};
     }
-    bool compat = !strcmp(endpoint, "chat/completions");
-    if (!strcmp(endpoint, "decisions") || compat) {
-        if (!compat)
-            CHECK(!strcmp(sget(get(root(request), "prompt_cache_options"), "mode"), "explicit"));
-        J *answers = arr(response);
-        put(response, r, "model", js(response, "gpt-6-luna"));
-        put(response, r, "answers", answers);
-        size_t i, n;
-        J *q;
-        yyjson_mut_arr_foreach(get(compat ? root(test_app->rubric) : root(request), "questions"), i,
-                               n, q) {
-            J *a = obj(response);
-            const char *name = sget(q, "name"), *type = sget(q, "type");
-            put(response, a, "name", js(response, name));
-            if (!strcmp(name, "human_verification")) {
-                put(response, a, "type", js(response, "refusal"));
-                add(answers, a);
-                continue;
-            }
-            put(response, a, "type", js(response, type));
-            if (!strcmp(type, "predicate"))
-                put(response, a, "probability",
-                    jnum(response, !strcmp(name, "activity_research")  ? .5
-                                   : !strcmp(name, "failed_tool_call") ? .05
-                                                                       : .95));
-            else if (!strcmp(type, "choice")) {
-                put(response, a, "choice",
-                    js(response, !strcmp(name, "plan_basis")
-                                     ? "both"
-                                     : sget(yyjson_mut_arr_get(get(q, "choices"), 0), "value")));
-                put(response, a, "confidence", jnum(response, .9));
-                put(response, a, "probabilities", arr(response));
-            } else {
-                put(response, a, "score", jnum(response, 2.75));
-                put(response, a, "confidence", jnum(response, .9));
-                put(response, a, "probabilities", arr(response));
-            }
-            add(answers, a);
-        }
-    } else {
+    if (!strcmp(sget(get(get(root(request),"text"),"format"),"name"),"symbiosic_analysis")) {
+        const char *result="{\"project_description\":\"A parser project\",\"issues_summary\":\"One concrete issue\",\"suggested_global_fix\":\"Add parser validation and tests.\",\"issues\":[{\"title\":\"Missing edge-case test\",\"severity\":\"medium\",\"evidence\":\"Parser test fixture\",\"explanation\":\"No empty-input test was observed.\",\"suggested_fix\":\"Add an empty-input regression test.\"}],\"coverage\":\"full\",\"limitations\":[]}";
+        J *output=arr(response),*m=obj(response),*parts=arr(response),*part=obj(response);
+        put(response,r,"output",output);add(output,m);put(response,m,"type",js(response,"message"));put(response,m,"role",js(response,"assistant"));put(response,m,"content",parts);add(parts,part);put(response,part,"type",js(response,"output_text"));put(response,part,"text",js(response,result));
+        J *usage=obj(response);put(response,r,"usage",usage);put(response,usage,"input_tokens",ji(response,100));put(response,usage,"output_tokens",ji(response,20));
+        char *out=json(r);doc_free(request);doc_free(response);return (Transport){.status=200,.body=out};
+    }
+    {
         CHECK(!strcmp(endpoint, "responses"));
         CHECK(!boolean(get(root(request), "store")));
         CHECK(!boolean(get(root(request), "parallel_tool_calls")));
@@ -177,17 +144,6 @@ static Transport fake(const char *endpoint, const char *body, const char *key) {
     put(response, usage, "input_tokens_details", details);
     put(response, details, "cached_tokens", ji(response, mode == 3 ? 10 : 0));
     put(response, details, "cache_write_tokens", ji(response, 0));
-    if (compat) {
-        char *answer = json(r);
-        J *choices = arr(response), *choice = obj(response), *message = obj(response);
-        put(response, message, "content", js(response, answer));
-        free(answer);
-        put(response, choice, "message", message);
-        add(choices, choice);
-        put(response, r, "choices", choices);
-        put(response, usage, "prompt_tokens", ji(response, 100));
-        put(response, usage, "completion_tokens", ji(response, 10));
-    }
     char *serialized = json(r);
     doc_free(response);
     doc_free(request);
@@ -371,57 +327,6 @@ static void test_tools(App *a) {
     doc_free(r);
     doc_free(d);
 }
-static void test_projection_limits(App *a) {
-    Trace *original = a->traces.v[0];
-    Trace local = {.doc = doc_clone(original->doc), .bytes = original->bytes};
-    strcpy(local.id, original->id);
-    J *events = get(root(local.doc), "events"), *e = yyjson_mut_arr_get(events, 0);
-    put(local.doc, e, "kind", js(local.doc, "message"));
-    char *large = xmalloc((128u * 1024) + 1);
-    memset(large, 'x', (128u * 1024));
-    large[(128u * 1024)] = 0;
-    put(local.doc, e, "text", js(local.doc, large));
-    char *body = NULL, *error = NULL;
-    Doc *coverage = projection(a, &local, &body, &error);
-    CHECK(coverage && body && !error);
-    CHECK(strlen(body) > (128u * 1024));
-    CHECK(integer(get(root(coverage), "level")) == 6);
-    free(body);
-    doc_free(coverage);
-    fidelity_free(local.fidelity);
-    local.fidelity = NULL;
-    put(local.doc, e, "kind", js(local.doc, "tool_result"));
-    coverage = projection(a, &local, &body, &error);
-    CHECK(coverage && body && !error);
-    size_t overhead = (size_t)integer(get(root(coverage), "overhead_tokens"));
-    free(body);
-    doc_free(coverage);
-    ModelConfig saved = a->cfg.decision;
-    a->cfg.decision.input_limit = overhead + fidelity_tokens(local.fidelity, 3) + 1024;
-    coverage = projection(a, &local, &body, &error);
-    CHECK(coverage && body && !error);
-    CHECK(integer(get(root(coverage), "level")) == 3);
-    CHECK(yyjson_mut_arr_size(get(root(coverage), "shortened_results")) == 1);
-    CHECK(strstr(body, "original UTF-8 bytes"));
-    CHECK(strlen(sget(e, "text")) == (128u * 1024));
-    free(body);
-    doc_free(coverage);
-    a->cfg.decision.input_limit = overhead + fidelity_tokens(local.fidelity, 1) + 1023;
-    coverage = projection(a, &local, &body, &error);
-    CHECK(!coverage && !body && error && strstr(error, "context_limit"));
-    free(error);
-    error = NULL;
-    a->cfg.decision = saved;
-    fidelity_free(local.fidelity);
-    free(large);
-    doc_free(local.doc);
-    Doc *invalid = parse("{\"answers\":[],\"usage\":{\"input_tokens\":5}}");
-    Doc *values =
-        interpret_answers(root(invalid), get(root(a->rubric), "questions"), false, &error);
-    CHECK(!values && error);
-    free(error);
-    doc_free(invalid);
-}
 static void test_fidelity(App *a) {
     CHECK(token_count("Hello, world!") == 4);
     Doc *d = parse("{\"meta\":{\"revision\":1,\"diagnostics\":{},\"stats\":{}},\"events\":[]}");
@@ -576,102 +481,6 @@ static void test_providers(App *a) {
     doc_free(saved_settings);
     doc_free(settings);
 }
-static void test_ai(App *a) {
-    Snapshot snapshot = {0};
-    Doc *scope = parse("{\"type\":\"all\"}"), *selection = parse("{\"all\":true}");
-    char *e = NULL;
-    CHECK(snapshot_take(a, root(scope), &snapshot, &e));
-    Doc *q = estimate_build(a, &snapshot, selection, &e);
-    CHECK(q);
-    CHECK(calls == 0);
-    CHECK(integer(get(root(q), "eligible")) == 2);
-    CHECK(number(get(root(q), "estimated_usd")) > 0);
-    J *entry = yyjson_mut_arr_get(get(root(q), "entries"), 0);
-    char *frozen = xstrdup(sget(entry, "request_body"));
-    Doc *result = analyze_entry(a, root(q), entry, &a->analyses, &e);
-    CHECK(result && !get(root(result), "error"));
-    CHECK(calls == 1);
-    CHECK(!strcmp(sent_body, frozen));
-    CHECK(fabs(number(get(get(get(root(result), "values"), "completion_evidence"), "value")) -
-               2.75) < .001);
-    CHECK(yyjson_mut_is_null(get(get(get(root(result), "values"), "human_verification"), "value")));
-    CHECK(yyjson_mut_arr_size(get(get(get(root(result), "values"), "activities"), "uncertain")) ==
-          1);
-    CHECK(fabs(number(get(root(result), "cost_usd")) - .00001) < .000000001);
-    docs_push(&a->analyses, result);
-    result = analyze_entry(a, root(q), entry, &a->analyses, &e);
-    CHECK(boolean(get(root(result), "reused")));
-    CHECK(calls == 1);
-    doc_free(result);
-    snapshot_free(&snapshot);
-    CHECK(snapshot_take(a, root(scope), &snapshot, &e));
-    Doc *again = estimate_build(a, &snapshot, selection, &e);
-    CHECK(integer(get(root(again), "cached")) == 1);
-    doc_free(again);
-    Doc *incomplete = interpret_answers(get(root(a->analyses.v[0]), "response"),
-                                        get(root(a->rubric), "questions"), true, &e);
-    CHECK(yyjson_mut_is_null(get(get(root(incomplete), "failed_tool_call"), "value")));
-    doc_free(incomplete);
-    J *second = yyjson_mut_arr_get(get(root(q), "entries"), 1);
-    mode = 1;
-    result = analyze_entry(a, root(q), second, &a->analyses, &e);
-    CHECK(get(root(result), "error"));
-    CHECK(boolean(get(root(result), "outcome_unknown")));
-    doc_free(result);
-    mode = 2;
-    result = analyze_entry(a, root(q), second, &a->analyses, &e);
-    CHECK(get(root(result), "error"));
-    doc_free(result);
-    mode = 3;
-    result = analyze_entry(a, root(q), second, &a->analyses, &e);
-    CHECK(boolean(get(root(result), "pricing_unresolved")));
-    CHECK(yyjson_mut_is_null(get(root(result), "cost_usd")));
-    doc_free(result);
-    mode = 0;
-    char *original = xstrdup(a->cfg.data_dir);
-    free(a->cfg.data_dir);
-    a->cfg.data_dir = xstrdup("/dev/null/unwritable");
-    result = analyze_entry(a, root(q), second, &a->analyses, &e);
-    CHECK(boolean(get(root(result), "result_not_saved")));
-    docs_push(&a->analyses, result);
-    int before = calls;
-    result = analyze_entry(a, root(q), second, &a->analyses, &e);
-    CHECK(calls == before);
-    doc_free(result);
-    free(a->cfg.data_dir);
-    a->cfg.data_dir = original;
-    /* Quote body remains immutable when the catalog advances. */
-    Trace *tr = trace_find(&a->traces, sget(entry, "trace_id"));
-    int64_t revision = integer(get(meta(tr), "revision"));
-    put(tr->doc, meta(tr), "revision", ji(tr->doc, revision + 1));
-    Doc *summary = trace_summary(tr, &a->analyses);
-    CHECK(boolean(get(get(root(summary), "analysis"), "outdated")));
-    doc_free(summary);
-    CHECK(!strcmp(frozen, sget(entry, "request_body")));
-    put(tr->doc, meta(tr), "revision", ji(tr->doc, revision));
-    docs_push(&a->quotes, doc_clone(q));
-    int status;
-    uv_loop_init(&a->loop);
-    Doc *ack = start_analysis(a, sget(root(q), "id"), &status);
-    CHECK(status == 202);
-    char *jid = xstrdup(sget(root(ack), "job_id"));
-    doc_free(ack);
-    ack = start_analysis(a, sget(root(q), "id"), &status);
-    CHECK(!strcmp(jid, sget(root(ack), "job_id")));
-    doc_free(ack);
-    before = calls;
-    uv_run(&a->loop, UV_RUN_DEFAULT);
-    CHECK(calls == before);
-    Doc *job = docs_find(&a->jobs, "id", jid);
-    CHECK(!strcmp(sget(root(job), "state"), "completed"));
-    free(jid);
-    uv_loop_close(&a->loop);
-    snapshot_free(&snapshot);
-    doc_free(scope);
-    doc_free(selection);
-    doc_free(q);
-    free(frozen);
-}
 static void test_chat_restart(App *a) {
     Doc *scope = parse("{\"type\":\"directory\",\"cwd\":\"/work/app\"}");
     int status;
@@ -714,7 +523,7 @@ static void test_chat_restart(App *a) {
     CHECK(docs_find(&a->chats, "id", id));
     job = docs_find(&a->jobs, "id", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     CHECK(!strcmp(sget(root(job), "state"), "interrupted"));
-    CHECK(a->analyses.n >= 2);
+    CHECK(a->analyses.n >= 1);
     CHECK(a->traces.n >= 2);
     CHECK(!strcmp(directory, a->cfg.data_dir));
     free(directory);
@@ -851,6 +660,8 @@ static void test_concurrency(App *a, const char *cp) {
     doc_free(quote);
     doc_free(ack);
 }
+#include "review_tests.h"
+
 int main(void) {
     char tmp[] = "/tmp/traceview-c-test-XXXXXX";
     CHECK(mkdtemp(tmp));
@@ -863,7 +674,6 @@ int main(void) {
     setenv("CODEX_ROOT", codex, 1);
     setenv("OPENAI_API_KEY", "test-only", 1);
     App a;
-    test_app = &a;
     CHECK(app_init(&a, &e));
     test_transport = fake;
     char *cp = fmt("%s/main.jsonl", claude), *xp = fmt("%s/main.jsonl", codex);
@@ -881,8 +691,7 @@ int main(void) {
     test_fidelity(&a);
     test_providers(&a);
     test_catalog(&a);
-    test_projection_limits(&a);
-    test_ai(&a);
+    test_symbiosic(&a);
     test_chat_restart(&a);
     test_chat_budget(&a);
     test_concurrency(&a, cp);

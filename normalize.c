@@ -124,6 +124,12 @@ static void metadata(Normal *n, J *p) {
             put(n->d, a, keys[i], copy(n->d, v));
     }
     put(n->d, e, "args", a);
+    const char *title = *sget(p,"title") ? sget(p,"title") : *sget(p,"thread_name") ? sget(p,"thread_name") : sget(p,"name");
+    if(*title) put(n->d,n->meta,"title",js(n->d,title));
+    if(*sget(p,"model")) put(n->d,n->meta,"model",copy(n->d,get(p,"model")));
+    if(*sget(p,"model_provider")) put(n->d,n->meta,"model_provider",copy(n->d,get(p,"model_provider")));
+    const char *effort=*sget(p,"effort")?sget(p,"effort"):sget(p,"reasoning_effort");
+    if(*effort) put(n->d,n->meta,"thinking",js(n->d,effort));
 }
 static void usage(Normal *n, J *u, const char *identity) {
     if (!yyjson_mut_is_obj(u))
@@ -143,6 +149,11 @@ static void args_field(Normal *n, J *e, J *args) {
 }
 static void claude(Normal *n, J *r) {
     const char *type = sget(r, "type");
+    if(!strcmp(type,"custom-title") || !strcmp(type,"summary")) {
+        const char *title=*sget(r,"customTitle")?sget(r,"customTitle"):sget(r,"summary");
+        if(*title) put(n->d,n->meta,"title",js(n->d,title));
+        return;
+    }
     if (strcmp(type, "user") && strcmp(type, "assistant") && strcmp(type, "system")) {
         if (!strcmp(type, "queue-operation") || !strcmp(type, "file-history-snapshot") ||
             !strcmp(type, "progress"))
@@ -151,6 +162,7 @@ static void claude(Normal *n, J *r) {
         return;
     }
     J *m = get(r, "message");
+    if(*sget(m,"model")) {put(n->d,n->meta,"model",copy(n->d,get(m,"model")));put(n->d,n->meta,"model_provider",js(n->d,"anthropic"));}
     if ((!strcmp(type, "user") || !strcmp(type, "assistant")) && !yyjson_mut_is_obj(m)) {
         n->unsupported++;
         return;
@@ -259,6 +271,7 @@ static void codex(Normal *n, J *r) {
         if (!strcmp(pt, "token_count")) {
             n->recognized = true;
             J *info = get(p, "info");
+            if(integer(get(info,"model_context_window"))>0)put(n->d,n->meta,"context_window",copy(n->d,get(info,"model_context_window")));
             if (yyjson_mut_is_obj(info))
                 usage(n, info, NULL);
             return;
@@ -650,6 +663,26 @@ Trace *normalize(const char *path, const char *provider, Trace *old, char **erro
         else
             codex(&n, r);
     }
+    size_t ei,en;J *ev;double previous=0;bool has_previous=false;
+    yyjson_mut_arr_foreach(n.events,ei,en,ev) {
+        Buf text={0};buf_add(&text,sget(ev,"text"));
+        if(get(ev,"args")){char *args=json(get(ev,"args"));buf_add(&text,args);free(args);}
+        put(n.d,ev,"tokens",ji(n.d,(int64_t)token_count(text.s?text.s:"")));buf_free(&text);
+        if(!*sget(n.meta,"title") && !strcmp(sget(ev,"role"),"user") && !strcmp(sget(ev,"kind"),"message")) {
+            const char *prompt=sget(ev,"text");size_t len=utf8_end(prompt,strlen(prompt),100);char *title=xmalloc(len+1);memcpy(title,prompt,len);title[len]=0;
+            for(char *p=title;*p;p++)if(*p=='\n'||*p=='\r')*p=' ';
+            put(n.d,n.meta,"title",js(n.d,title));free(title);
+        }
+        double ts; if(timestamp(sget(ev,"ts"),&ts)) {
+            if(has_previous && ts>=previous && (!strcmp(sget(ev,"role"),"assistant")||!strcmp(sget(ev,"kind"),"tool_result"))) {
+                double begin=previous;
+                if(!strcmp(sget(ev,"kind"),"tool_result") && *sget(ev,"call_id")) for(size_t k=ei;k>0;k--){J *call=yyjson_mut_arr_get(n.events,k-1);if(!strcmp(sget(call,"kind"),"tool_call")&&!strcmp(sget(call,"call_id"),sget(ev,"call_id"))){double start;if(timestamp(sget(call,"ts"),&start))begin=start;break;}}
+                put(n.d,ev,"duration_seconds",jnum(n.d,ts-begin));
+            }
+            previous=ts;has_previous=true;
+        }
+    }
+    if(!*sget(n.meta,"title"))put(n.d,n.meta,"title",js(n.d,"Untitled session"));
     for (size_t k = 0; k < nr; k++)
         doc_free(rows[k].d);
     free(rows);

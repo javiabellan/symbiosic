@@ -1,0 +1,4 @@
+---
+{"name": "backend", "description": "Backend", "metadata": {"detection": "Servers, APIs, authentication, databases, queues, distributed systems and infrastructure."}}
+---
+Review API contracts, validation, authorization, storage consistency, transactions, concurrency, observability, failure recovery and scalability. Check trust boundaries and resource limits. Suggest realistic integration tests and migration safeguards.

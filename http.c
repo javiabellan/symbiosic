@@ -396,6 +396,18 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
     J *in = root(input);
     if (get_method && !strcmp(path, "/api/state"))
         out = state_doc(a);
+    else if (get_method && !strcmp(path,"/api/domains")) out=doc_clone(a->domains);
+    else if (post && !strcmp(path,"/api/domains")) out=domains_update(a,in,&status);
+    else if (get_method && (!strcmp(path,"/api/directory") || !strcmp(path,"/api/file"))) {
+        size_t offset;
+        if(!directory_allowed(a,sget(q,"cwd")) || !query_int(q,"offset",0,&offset)) { status=400;out=error_doc("bad_directory","Select a known working directory and valid offset"); }
+        else { Doc *sel=doc_clone(query);put(sel,root(sel),"offset",ji(sel,(int64_t)offset));put(sel,root(sel),"file",jb(sel,!strcmp(path,"/api/file")));enqueue_directory(a,sel,send,ctx);doc_free(query);doc_free(input);free(path);return; }
+    }
+    else if (get_method && !strcmp(path,"/api/analysis")) {
+        Doc *scope=doc_new();put(scope,root(scope),"type",js(scope,*sget(q,"id")?"trace":"directory"));
+        put(scope,root(scope),"id",copy(scope,get(q,"id")));put(scope,root(scope),"cwd",copy(scope,get(q,"cwd")));
+        Doc *analysis=analysis_for_scope(a,root(scope));out=analysis?analysis_index(analysis):doc_new();doc_free(scope);
+    }
     else if (get_method && !strcmp(path, "/api/settings"))
         out = ai_settings(a);
     else if (post && (!strcmp(path, "/api/settings") || !strcmp(path, "/api/provider")))
@@ -427,7 +439,8 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
             out = error_doc("not_found", "Trace not found");
             goto done;
         }
-        out = events_page(t, start, limit, offset);
+        if(!strcmp(sget(q,"overview"),"1")) out=trace_overview(t);
+        else out = events_page(t, start, limit, offset);
         if (get(root(out), "error")) {
             status = 400;
             goto done;
@@ -438,20 +451,10 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
         doc_free(summary);
     } else if (post && !strcmp(path, "/api/estimate")) {
         J *ids = get(in, "trace_ids");
-        bool all = yyjson_mut_is_true(get(in, "all"));
-        if (yyjson_mut_obj_size(in) != 1 || (!all && !yyjson_mut_is_arr(ids)) ||
-            (!all && (yyjson_mut_arr_size(ids) < 1 || yyjson_mut_arr_size(ids) > MAX_SOURCES))) {
-            status = 400;
-            out = error_doc("bad_arguments", "Send {all:true} or a nonempty trace_ids array");
-            goto done;
-        }
-        size_t i, n;
-        J *id;
-        yyjson_mut_arr_foreach(ids, i, n, id) if (!valid_id(str(id))) {
-            status = 400;
-            out = error_doc("bad_arguments",
-                            "trace_ids must contain opaque 32-digit hexadecimal IDs");
-            goto done;
+        bool directory = *sget(in,"cwd") != 0;
+        if (get(in,"all") || (directory ? yyjson_mut_arr_size(ids)!=0 || !directory_allowed(a,sget(in,"cwd"))
+            : yyjson_mut_arr_size(ids)!=1 || !valid_id(str(yyjson_mut_arr_get(ids,0))))) {
+            status=400;out=error_doc("single_item_required","Choose exactly one trace or a known directory. Batch analysis is unavailable.");goto done;
         }
         enqueue_estimate(a, input, send, ctx);
         input = NULL;

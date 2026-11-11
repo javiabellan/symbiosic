@@ -1,0 +1,4 @@
+---
+{"name": "software-engineering", "description": "Software Engineering", "metadata": {"detection": "Apps, algorithms, full stack development, software architecture, testing and CI/CD."}}
+---
+Evaluate correctness, architecture, interfaces, error handling, test coverage, dependency management and CI/CD. Prefer simple changes with clear validation steps. Consider both the code and the quality of human–agent collaboration.

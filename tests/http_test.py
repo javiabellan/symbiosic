@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix="traceview-http-") as temporary:
     process = None
 
     def start():
-        p = subprocess.Popen([str(ROOT / "traceview")], cwd=ROOT, env=env,
+        p = subprocess.Popen([str(ROOT / "symbiosic")], cwd=ROOT, env=env,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         line = p.stdout.readline().strip()
         if line != f"http://127.0.0.1:{port}":
@@ -124,9 +124,15 @@ with tempfile.TemporaryDirectory(prefix="traceview-http-") as temporary:
         check(fragmented.startswith(b"HTTP/1.1 200"), "Fragmented body parsed")
         chat_id = json.loads(fragmented.split(b"\r\n\r\n", 1)[1])["chat_id"]
         check(request("POST", "/api/chat/message", {"chat_id": chat_id, "text": "Question"})[0] == 409, "Paid chat disabled without key")
-        _, quote = request("POST", "/api/estimate", {"all": True})
-        check(quote["total"] == 3 and quote["eligible"] == 3, "Analyze all quote covers every trace")
-        check(all(e["coverage"]["level"] == 6 and len(e["coverage"]["level_tokens"]) == 6 for e in quote["entries"]), "Six fidelity counts exposed in quote")
+        check(request("POST", "/api/estimate", {"all": True})[0] == 400, "Batch analysis removed")
+        check(request("POST", "/api/estimate", {"trace_ids": [state["traces"][0]["trace_id"], state["traces"][1]["trace_id"]]})[0] == 400, "Multi-trace requests rejected")
+        _, domains = request("GET", "/api/domains")
+        check(len(domains) == 6, "Six editable domains")
+        check(request("POST", "/api/domains", {"id":"../escape","name":"x","detection_prompt":"x","analysis_prompt":"x"})[0] == 400, "Domain path traversal rejected")
+        _, quote = request("POST", "/api/estimate", {"trace_ids": [state["traces"][0]["trace_id"]], "domain":"frontend"})
+        check(quote["total"] == 1 and quote["eligible"] == 1, "Single trace estimate")
+        check(quote["entries"][0]["coverage"]["level"] == 5, "Full level 5 analysis excludes system prompts")
+        check("source" not in quote["entries"][0] and "request_body" not in quote["entries"][0], "Private evidence omitted from estimate preview")
         check(request("POST", "/api/analyze", {"quote_id": quote["id"]})[0] == 409, "Paid analysis disabled without key")
         native = next(t for t in state["traces"] if t["provider"] == "codex")
         old_revision = native["revision"]
@@ -148,7 +154,7 @@ with tempfile.TemporaryDirectory(prefix="traceview-http-") as temporary:
         check("NEW MARKER" not in snapshot.read_text(), "Truncation rebuilds snapshot")
         (codex / "main.jsonl").unlink()
         wait_for(lambda s: next(t for t in s["traces"] if t["trace_id"] == native["trace_id"])["source_missing"])
-        second = subprocess.run([str(ROOT / "traceview")], cwd=ROOT, env=env, capture_output=True, text=True, timeout=5)
+        second = subprocess.run([str(ROOT / "symbiosic")], cwd=ROOT, env=env, capture_output=True, text=True, timeout=5)
         check(second.returncode != 0 and "instance.lock" in second.stderr, "Second writer rejected")
         stop(process)
         process = None

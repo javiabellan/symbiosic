@@ -1,0 +1,72 @@
+{
+  "type": "object",
+  "properties": {
+    "project_description": {
+      "type": "string"
+    },
+    "issues_summary": {
+      "type": "string"
+    },
+    "suggested_global_fix": {
+      "type": "string"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "suggested_fix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "severity",
+          "evidence",
+          "explanation",
+          "suggested_fix"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "coverage": {
+      "type": "string",
+      "enum": [
+        "full",
+        "partial"
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "project_description",
+    "issues_summary",
+    "suggested_global_fix",
+    "issues",
+    "coverage",
+    "limitations"
+  ],
+  "additionalProperties": false
+}

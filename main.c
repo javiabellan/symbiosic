@@ -6,7 +6,7 @@
 #include <time.h>
 #include <signal.h>
 
-typedef enum { TASK_ESTIMATE, TASK_BATCH, TASK_CHAT, TASK_MODELS } TaskKind;
+typedef enum { TASK_ESTIMATE, TASK_ANALYSIS, TASK_CHAT, TASK_MODELS, TASK_DIRECTORY } TaskKind;
 struct Task {
     uv_work_t work;
     App *app;
@@ -33,7 +33,7 @@ static void persist_job(App *a, Doc *job) {
     if (!save_doc(a, "jobs", sget(root(job), "id"), job, &e)) {
         put(job, root(job), "result_not_saved", jb(job, true));
         put(job, root(job), "save_error", js(job, e));
-        fprintf(stderr, "traceview: job not saved: %s\n", e);
+        fprintf(stderr, "symbiosic: job not saved: %s\n", e);
         free(e);
     }
 }
@@ -109,7 +109,7 @@ static void queue(App *a, Task *t) {
         a->head = t;
     a->tail = t;
 }
-static void finish_batch(Task *t) {
+static void finish_analysis(Task *t) {
     J *j = root(t->job);
     size_t count = yyjson_mut_arr_size(get(root(t->quote), "entries"));
     int64_t fail = integer(get(j, "failed")), success = integer(get(j, "succeeded"));
@@ -122,16 +122,26 @@ static void finish_batch(Task *t) {
 static void ai_worker(uv_work_t *w) {
     Task *t = w->data;
     App *a = t->app;
+    if (t->kind == TASK_DIRECTORY) {
+        App local = *a; local.traces = t->snapshot.traces;
+        J *sel = root(t->selection);
+        if (boolean(get(sel,"file"))) t->result = directory_read(sget(sel,"cwd"),sget(sel,"path"),(size_t)integer(get(sel,"offset")),8192,NULL);
+        else t->result = directory_page(&local,sget(sel,"cwd"),sget(sel,"path"),(size_t)integer(get(sel,"offset")),&t->error);
+        return;
+    }
     if (t->kind == TASK_MODELS) {
         t->result = provider_models(&a->cfg, (Provider)t->index, &t->error);
         return;
     }
     if (t->kind == TASK_ESTIMATE) {
-        t->result = estimate_build(a, &t->snapshot, t->selection, &t->error);
+        App local = *a; local.traces = t->snapshot.traces;
+        t->result = estimate_build(&local, &t->snapshot, t->selection, &t->error);
         return;
     }
     if (t->kind == TASK_CHAT) {
-        t->result = chat_turn(a, t->chat, &t->snapshot, t->text, &t->error);
+        t->result = get(root(t->chat),"analysis_snapshot") || !strcmp(sget(get(root(t->chat),"scope"),"type"),"directory")
+            ? review_chat_turn(a,t->chat,&t->snapshot,t->text,&t->error)
+            : chat_turn(a, t->chat, &t->snapshot, t->text, &t->error);
         put(t->job, root(t->job), "state",
             js(t->job, t->error || get(root(t->result), "turn_error") ? "failed" : "completed"));
         if (t->result) {
@@ -146,7 +156,7 @@ static void ai_worker(uv_work_t *w) {
     }
     J *entries = get(root(t->quote), "entries"), *entry = yyjson_mut_arr_get(entries, t->index);
     if (!entry) {
-        finish_batch(t);
+        finish_analysis(t);
         persist_job(a, t->job);
         return;
     }
@@ -180,7 +190,7 @@ static void ai_worker(uv_work_t *w) {
     }
     add(get(j, "results"), row);
     t->index++;
-    finish_batch(t);
+    finish_analysis(t);
     persist_job(a, job);
 }
 static void ai_done(uv_work_t *w, int status) {
@@ -194,7 +204,9 @@ static void ai_done(uv_work_t *w, int status) {
         put(t->job, root(t->job), "error", js(t->job, t->error));
         persist_job(a, t->job);
     }
-    if (t->kind == TASK_MODELS) {
+    if (t->kind == TASK_DIRECTORY) {
+        t->reply(t->reply_ctx,t->result?200:400,t->result?doc_clone(t->result):error_doc("directory_unavailable",t->error?t->error:"Directory unavailable"));
+    } else if (t->kind == TASK_MODELS) {
         t->reply(t->reply_ctx, t->result ? 200 : 502,
                  t->result
                      ? doc_clone(t->result)
@@ -203,11 +215,14 @@ static void ai_done(uv_work_t *w, int status) {
         if (t->result) {
             docs_push(&a->quotes, doc_clone(t->result));
             Doc *preview = doc_clone(t->result);
-            yyjson_mut_obj_remove_str(root(preview), "rubric_content");
+            const char *private_fields[] = {"domains","prompts","schema","tools","detection_body"};
+            for(size_t i=0;i<5;i++) yyjson_mut_obj_remove_str(root(preview),private_fields[i]);
             size_t i, n;
             J *e;
             yyjson_mut_arr_foreach(get(root(preview), "entries"), i, n, e) {
                 yyjson_mut_obj_remove_str(e, "request_body");
+                yyjson_mut_obj_remove_str(e, "source");
+                yyjson_mut_obj_remove_str(e, "evidence");
                 yyjson_mut_obj_remove_str(get(e, "coverage"), "input_event_ids");
             }
             t->reply(t->reply_ctx, 200, preview);
@@ -215,7 +230,7 @@ static void ai_done(uv_work_t *w, int status) {
             t->reply(t->reply_ctx, 500,
                      error_doc("estimate_failed", t->error ? t->error : "Unable to build quote"));
     } else {
-        if (t->kind == TASK_BATCH && t->result && !get(root(t->result), "error")) {
+        if (t->kind == TASK_ANALYSIS && t->result && !get(root(t->result), "error")) {
             if (!docs_find(&a->analyses, "id", sget(root(t->result), "id")))
                 docs_push(&a->analyses, analysis_index(t->result));
             a->catalog_revision++;
@@ -227,7 +242,7 @@ static void ai_done(uv_work_t *w, int status) {
             persist_job(a, t->job);
         }
         docs_replace(&a->jobs, "id", doc_clone(t->job));
-        if (t->kind == TASK_BATCH && !a->stopping && !status &&
+        if (t->kind == TASK_ANALYSIS && !a->stopping && !status &&
             t->index < yyjson_mut_arr_size(get(root(t->quote), "entries"))) {
             doc_free(t->result);
             t->result = NULL;
@@ -250,7 +265,7 @@ void ai_kick(App *a) {
     if (!a->head)
         a->tail = NULL;
     t->work.data = t;
-    if (t->kind == TASK_BATCH) { /* Cache check is refreshed between every trace request. */
+    if (t->kind == TASK_ANALYSIS) { /* Cache check is refreshed between every trace request. */
         for (size_t i = 0; i < a->analyses.n; i++)
             docs_push(&t->snapshot.analyses, doc_clone(a->analyses.v[i]));
     }
@@ -263,6 +278,11 @@ void ai_kick(App *a) {
     int rc = uv_queue_work(&a->loop, &t->work, ai_worker, ai_done);
     if (rc)
         ai_done(&t->work, rc);
+}
+void enqueue_directory(App *a, Doc *selection, Reply reply, void *ctx) {
+    Task *t=xcalloc(1,sizeof(*t));t->app=a;t->kind=TASK_DIRECTORY;t->selection=selection;t->reply=reply;t->reply_ctx=ctx;
+    for(size_t i=0;i<a->traces.n;i++) if(!strcmp(sget(get(root(a->traces.v[i]->doc),"meta"),"cwd"),sget(root(selection),"cwd"))) { trace_retain(a->traces.v[i]);traces_push(&t->snapshot.traces,a->traces.v[i]); }
+    queue(a,t);ai_kick(a);
 }
 void enqueue_models(App *a, Provider provider, Reply reply, void *ctx) {
     Task *t = xcalloc(1, sizeof(*t));
@@ -286,7 +306,7 @@ void enqueue_estimate(App *a, Doc *selection, Reply reply, void *ctx) {
     J *ids = get(root(selection), "trace_ids");
     for (size_t i = 0; i < a->traces.n; i++) {
         Trace *tr = a->traces.v[i];
-        bool include = all;
+        bool include = all || (*sget(root(selection),"cwd") && !strcmp(sget(meta(tr),"cwd"),sget(root(selection),"cwd")));
         size_t k, n;
         J *id;
         yyjson_mut_arr_foreach(ids, k, n, id) if (!strcmp(str(id), tr->id)) include = true;
@@ -319,6 +339,12 @@ Doc *start_analysis(App *a, const char *id, int *status) {
     if (integer(get(root(quote), "expires_at_epoch")) <= (int64_t)time(NULL)) {
         *status = 409;
         return error_doc("expired_quote", "Quote expired; refresh the estimate");
+    }
+    if(strcmp(sget(root(quote),"engine"),"symbiosic-v1") || yyjson_mut_arr_size(get(root(quote),"entries"))!=1) {
+        *status=400;return error_doc("retired_estimate","Create a new estimate for exactly one trace or directory");
+    }
+    if(!strcmp(sget(root(quote),"domain"),"auto") && !*a->cfg.key) {
+        *status=409;return error_doc("missing_key","Automatic domain detection requires an OpenAI API key");
     }
     Provider quoted_provider;
     if (!provider_parse(sget(root(quote), "ai_provider"), &quoted_provider))
@@ -357,13 +383,13 @@ Doc *start_analysis(App *a, const char *id, int *status) {
     /* Durable job lookup by quote_id provides idempotency even if quote update fails/crashes. */
     put(quote, root(quote), "job_id", js(quote, job_id));
     if (!save_doc(a, "quotes", id, quote, &e)) {
-        fprintf(stderr, "traceview: quote link not saved: %s\n", e);
+        fprintf(stderr, "symbiosic: quote link not saved: %s\n", e);
         free(e);
     }
     docs_push(&a->jobs, doc_clone(job));
     Task *t = xcalloc(1, sizeof(*t));
     t->app = a;
-    t->kind = TASK_BATCH;
+    t->kind = TASK_ANALYSIS;
     t->job = job;
     t->quote = doc_clone(quote);
     queue(a, t);
@@ -427,7 +453,10 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status) {
         *status = 404;
         return error_doc("not_found", "Chat not found");
     }
-    if (!*provider_key(&a->cfg, a->cfg.chat.provider)) {
+    Doc *associated_analysis=analysis_for_scope(a,get(root(chat),"scope"));
+    Provider chat_provider=a->cfg.chat.provider;
+    if(associated_analysis)provider_parse(sget(root(associated_analysis),"ai_provider"),&chat_provider);
+    if (!*provider_key(&a->cfg, chat_provider)) {
         *status = 409;
         return error_doc("missing_key",
                          "Selected provider API key is missing; chat has separate paid API usage");
@@ -471,6 +500,8 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status) {
         return e;
     }
     t->chat = doc_clone(chat);
+    Doc *associated=analysis_for_scope(a,get(root(chat),"scope"));
+    if(associated)put(t->chat,root(t->chat),"analysis_snapshot",copy(t->chat,root(associated)));
     put(t->chat, root(t->chat), "latest_job", js(t->chat, job_id));
     J *m = obj(t->chat);
     put(t->chat, m, "role", js(t->chat, "user"));
@@ -552,7 +583,7 @@ void app_shutdown(App *a) {
         return;
     a->stopping = true;
     fprintf(stderr,
-            "traceview: stopping; waiting for active workers (network timeout at most 120s)\n");
+            "symbiosic: stopping; waiting for active workers (network timeout at most 120s)\n");
     http_stop(a);
     uv_timer_stop(&a->poll);
     uv_close((uv_handle_t *)&a->poll, NULL);
@@ -584,16 +615,7 @@ bool app_init(App *a, char **error) {
         return false;
     }
     size_t n;
-    char *s = read_file("rubric.json", MAX_SCHEMA_BYTES, &n, error);
-    if (!s)
-        return false;
-    a->rubric = doc_parse(s, n);
-    free(s);
-    if (!a->rubric || !yyjson_mut_is_arr(get(root(a->rubric), "questions"))) {
-        *error = xstrdup("Invalid rubric.json");
-        return false;
-    }
-    s = read_file("tools.json", MAX_SCHEMA_BYTES, &n, error);
+    char *s = read_file("tools.json", MAX_SCHEMA_BYTES, &n, error);
     if (!s)
         return false;
     a->tools = doc_parse(s, n);
@@ -605,12 +627,13 @@ bool app_init(App *a, char **error) {
     a->html = read_file("web/index.html", 1024 * 1024, &n, error);
     if (!a->html)
         return false;
-    return tokenizer_init(error) && store_open(a, error) && ai_settings_load(a, error);
+    return tokenizer_init(error) && store_open(a, error) && ai_settings_load(a, error) && prompts_load(a,error);
 }
 void app_destroy(App *a) {
     store_close(a);
-    doc_free(a->rubric);
     doc_free(a->tools);
+    doc_free(a->domains);
+    doc_free(a->prompts);
     free(a->html);
     free(a->discovery_error);
     config_free(&a->cfg);
@@ -623,14 +646,14 @@ int main(void) {
     App a;
     char *error = NULL;
     if (!app_init(&a, &error)) {
-        fprintf(stderr, "traceview: %s\n", error ? error : "Initialization failed");
+        fprintf(stderr, "symbiosic: %s\n", error ? error : "Initialization failed");
         free(error);
         app_destroy(&a);
         return 1;
     }
     uv_loop_init(&a.loop);
     if (!http_start(&a, &error)) {
-        fprintf(stderr, "traceview: %s\n", error);
+        fprintf(stderr, "symbiosic: %s\n", error);
         free(error);
         uv_run(&a.loop, UV_RUN_DEFAULT);
         uv_loop_close(&a.loop);

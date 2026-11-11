@@ -1,0 +1,4 @@
+---
+{"name": "data-science", "description": "Data Science", "metadata": {"detection": "Machine learning, data analysis, statistics, experiments, datasets and reproducible notebooks."}}
+---
+Review data provenance, cleaning, leakage, split design, statistical assumptions, uncertainty, baseline comparisons, reproducibility and communication of results. Distinguish correlation from causation and findings from unsupported claims.

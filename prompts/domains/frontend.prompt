@@ -1,0 +1,4 @@
+---
+{"name": "frontend", "description": "Frontend", "metadata": {"detection": "React, Angular, Vue, browser interfaces, HTML, CSS, accessibility and client-side state."}}
+---
+Review component structure, state transitions, accessibility, keyboard interaction, responsive behavior, rendering performance, browser compatibility and UI consistency. Identify missing loading, empty and failure states. Consider the user experience as well as code correctness.
