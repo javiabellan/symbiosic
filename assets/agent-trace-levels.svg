@@ -1,0 +1,241 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1274" viewBox="0 0 1440 1274" role="img" aria-labelledby="title desc">
+<title id="title">Agent trace fidelity: six levels from minimal to complete</title><desc id="desc">Each row shows one user-to-answer turn at a different display level. Level 1 keeps user prompts and answers. Level 2 adds clipped tool outputs, represented by head and tail fragments with the middle omitted. Level 3 adds tool calls alongside those clipped outputs. Level 4 keeps full tool outputs. Level 5 adds recorded thinking. Level 6 adds the system prompt once at the start of the trace. Tool call and response pairs occur zero to N times per turn. An outer dashed box marks 1 to N user-to-answer turns, excluding the system prompt. Hidden events can still have occurred.</desc>
+<defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7" fill="none" stroke="#65758e" stroke-width="1.2"/></marker><linearGradient id="accent"><stop stop-color="#7de4c4"/><stop offset="1" stop-color="#a8a1ff"/></linearGradient></defs>
+<g font-family="DejaVu Sans, Arial, sans-serif">
+<rect x="1" y="1" width="1438" height="1272" rx="24" fill="#0d1421" stroke="#2a3549" />
+<rect x="32" y="32" width="5" height="88" rx="2" fill="url(#accent)" stroke="none" />
+<text x="54" y="54" font-size="13" fill="#7de4c4" font-weight="700" text-anchor="start" letter-spacing="2.4">AGENT OBSERVABILITY</text>
+<text x="52" y="94" font-size="36" fill="#f3f6fc" font-weight="700" text-anchor="start" >One trace. Six levels of detail.</text>
+<text x="54" y="124" font-size="17" fill="#9aaac1" font-weight="400" text-anchor="start" >Progressively reveal what the trace contains — from conversation only to the complete recorded trace.</text>
+<rect x="1124" y="46" width="280" height="46" rx="23" fill="#192237" stroke="#32435f" />
+<text x="1144" y="75" font-size="12" fill="#9aaac1" font-weight="700" text-anchor="start" >MINIMAL</text>
+<path d="M1223 69 H1271" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="1286" y="75" font-size="12" fill="#c9afff" font-weight="700" text-anchor="start" >COMPLETE</text>
+<rect x="54" y="153" width="9" height="9" rx="3" fill="#f0a6cd" stroke="none" />
+<text x="71" y="163" font-size="13" fill="#bac6d9" font-weight="400" text-anchor="start" >User Prompt</text>
+<rect x="218" y="153" width="9" height="9" rx="3" fill="#8ac9ff" stroke="none" />
+<text x="235" y="163" font-size="13" fill="#bac6d9" font-weight="400" text-anchor="start" >LLM Think</text>
+<rect x="446" y="153" width="9" height="9" rx="3" fill="#7de4c4" stroke="none" />
+<text x="463" y="163" font-size="13" fill="#bac6d9" font-weight="400" text-anchor="start" >LLM Tool Call</text>
+<rect x="596" y="153" width="9" height="9" rx="3" fill="#f5cf77" stroke="none" />
+<text x="613" y="163" font-size="13" fill="#bac6d9" font-weight="400" text-anchor="start" >Tool Output</text>
+<rect x="792" y="153" width="9" height="9" rx="3" fill="#7de4c4" stroke="none" />
+<text x="809" y="163" font-size="13" fill="#bac6d9" font-weight="400" text-anchor="start" >LLM Answer</text>
+<rect x="972" y="153" width="9" height="9" rx="3" fill="#c9afff" stroke="none" />
+<text x="989" y="163" font-size="13" fill="#bac6d9" font-weight="400" text-anchor="start" >System Prompt</text>
+<rect x="32" y="192" width="1376" height="142" rx="14" fill="#121d2d" stroke="#28364b" />
+<rect x="32" y="208" width="3" height="110" rx="1" fill="#7de4c4" stroke="none" />
+<rect x="51" y="251" width="35" height="30" rx="8" fill="#24324a" stroke="none" />
+<text x="68.5" y="272" font-size="14" fill="#d7e3f6" font-weight="700" text-anchor="middle" >01</text>
+<text x="99" y="272" font-size="18" fill="#e6edf3" font-weight="700" text-anchor="start" >Prompts &amp; answers</text>
+<rect x="52" y="308" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="78" y="308" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="104" y="308" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="130" y="308" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="156" y="308" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="182" y="308" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="360" y="244" width="86" height="44" rx="10" fill="#332337" stroke="#f0a6cd" stroke-opacity=".48"/>
+<text x="403.0" y="262" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >User</text>
+<text x="403.0" y="280" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >Prompt</text>
+<path d="M450 266 H471" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="476" y="244" width="92" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="522.0" y="262" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="522.0" y="280" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Answer</text>
+<text x="622" y="264" font-size="16" fill="#9aaac1" font-weight="400" text-anchor="start" >Tool activity is omitted from this view.</text>
+<text x="622" y="289" font-size="14" fill="#7589a6" font-weight="400" text-anchor="start" >The underlying turn may still contain 0–N calls.</text>
+<rect x="348" y="206" width="232" height="116" rx="14" fill="none" stroke="#8d9ec1" stroke-dasharray="7 5" stroke-width="1.2"/>
+<rect x="368" y="196" width="60" height="20" rx="6" fill="#2b3651" stroke="none" />
+<text x="398" y="211" font-size="13" fill="#e0e7fa" font-weight="700" text-anchor="middle" >1–N</text>
+<rect x="32" y="348" width="1376" height="142" rx="14" fill="#121d2d" stroke="#28364b" />
+<rect x="32" y="364" width="3" height="110" rx="1" fill="#86d9d9" stroke="none" />
+<rect x="51" y="407" width="35" height="30" rx="8" fill="#24324a" stroke="none" />
+<text x="68.5" y="428" font-size="14" fill="#d7e3f6" font-weight="700" text-anchor="middle" >02</text>
+<text x="99" y="428" font-size="18" fill="#e6edf3" font-weight="700" text-anchor="start" >+ Clipped tool outputs</text>
+<rect x="52" y="464" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="78" y="464" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="104" y="464" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="130" y="464" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="156" y="464" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="182" y="464" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="360" y="400" width="86" height="44" rx="10" fill="#332337" stroke="#f0a6cd" stroke-opacity=".48"/>
+<text x="403.0" y="418" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >User</text>
+<text x="403.0" y="436" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >Prompt</text>
+<path d="M450 422 H471" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="473" y="383" width="238" height="82" rx="12" fill="#0e1726" stroke="#586b86" stroke-dasharray="5 5"/>
+<rect x="485" y="373" width="60" height="20" rx="6" fill="#1e3048" stroke="none" />
+<text x="515" y="388" font-size="13" fill="#dce7f8" font-weight="700" text-anchor="middle" >0–N</text>
+<g transform="translate(487 400)">
+<path d="M10 0 H103 L94 44 H10 Q0 44 0 34 V10 Q0 0 10 0 Z M115 0 H194 Q204 0 204 10 V34 Q204 44 194 44 H106 Z" fill="#3b301a" stroke="#f5cf77" stroke-opacity=".48"/>
+<text x="48" y="18" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Tool Out</text>
+<text x="48" y="36" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Head</text>
+<text x="157" y="18" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Tool Out</text>
+<text x="157" y="36" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Tail</text>
+</g>
+<path d="M716 422 H738" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="743" y="400" width="92" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="789.0" y="418" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="789.0" y="436" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Answer</text>
+<text x="878" y="416" font-size="14" fill="#7d90ab" font-weight="400" text-anchor="start" >Calls hidden</text>
+<text x="878" y="439" font-size="14" fill="#f5cf77" font-weight="400" text-anchor="start" >2.5k limit</text>
+<rect x="348" y="362" width="499" height="116" rx="14" fill="none" stroke="#8d9ec1" stroke-dasharray="7 5" stroke-width="1.2"/>
+<rect x="368" y="352" width="60" height="20" rx="6" fill="#2b3651" stroke="none" />
+<text x="398" y="367" font-size="13" fill="#e0e7fa" font-weight="700" text-anchor="middle" >1–N</text>
+<rect x="32" y="504" width="1376" height="142" rx="14" fill="#121d2d" stroke="#28364b" />
+<rect x="32" y="520" width="3" height="110" rx="1" fill="#8ac9ff" stroke="none" />
+<rect x="51" y="563" width="35" height="30" rx="8" fill="#24324a" stroke="none" />
+<text x="68.5" y="584" font-size="14" fill="#d7e3f6" font-weight="700" text-anchor="middle" >03</text>
+<text x="99" y="584" font-size="18" fill="#e6edf3" font-weight="700" text-anchor="start" >+ Tool-call requests</text>
+<rect x="52" y="620" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="78" y="620" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="104" y="620" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="130" y="620" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="156" y="620" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="182" y="620" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="360" y="556" width="86" height="44" rx="10" fill="#332337" stroke="#f0a6cd" stroke-opacity=".48"/>
+<text x="403.0" y="574" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >User</text>
+<text x="403.0" y="592" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >Prompt</text>
+<path d="M450 578 H471" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="473" y="539" width="364" height="82" rx="12" fill="#0e1726" stroke="#586b86" stroke-dasharray="5 5"/>
+<rect x="485" y="529" width="60" height="20" rx="6" fill="#1e3048" stroke="none" />
+<text x="515" y="544" font-size="13" fill="#dce7f8" font-weight="700" text-anchor="middle" >0–N</text>
+<rect x="487" y="556" width="96" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="535.0" y="574" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="535.0" y="592" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Tool Call</text>
+<path d="M588 578 H608" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<g transform="translate(613 556)">
+<path d="M10 0 H103 L94 44 H10 Q0 44 0 34 V10 Q0 0 10 0 Z M115 0 H194 Q204 0 204 10 V34 Q204 44 194 44 H106 Z" fill="#3b301a" stroke="#f5cf77" stroke-opacity=".48"/>
+<text x="48" y="18" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Tool Out</text>
+<text x="48" y="36" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Head</text>
+<text x="157" y="18" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Tool Out</text>
+<text x="157" y="36" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Tail</text>
+</g>
+<path d="M842 578 H864" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="869" y="556" width="92" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="915.0" y="574" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="915.0" y="592" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Answer</text>
+<text x="1004" y="584" font-size="14" fill="#f5cf77" font-weight="400" text-anchor="start" >2.5k limit</text>
+<rect x="348" y="518" width="625" height="116" rx="14" fill="none" stroke="#8d9ec1" stroke-dasharray="7 5" stroke-width="1.2"/>
+<rect x="368" y="508" width="60" height="20" rx="6" fill="#2b3651" stroke="none" />
+<text x="398" y="523" font-size="13" fill="#e0e7fa" font-weight="700" text-anchor="middle" >1–N</text>
+<rect x="32" y="660" width="1376" height="142" rx="14" fill="#121d2d" stroke="#28364b" />
+<rect x="32" y="676" width="3" height="110" rx="1" fill="#a5baff" stroke="none" />
+<rect x="51" y="719" width="35" height="30" rx="8" fill="#24324a" stroke="none" />
+<text x="68.5" y="740" font-size="14" fill="#d7e3f6" font-weight="700" text-anchor="middle" >04</text>
+<text x="99" y="740" font-size="18" fill="#e6edf3" font-weight="700" text-anchor="start" >Clipped → full outputs</text>
+<rect x="52" y="776" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="78" y="776" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="104" y="776" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="130" y="776" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="156" y="776" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="182" y="776" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="360" y="712" width="86" height="44" rx="10" fill="#332337" stroke="#f0a6cd" stroke-opacity=".48"/>
+<text x="403.0" y="730" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >User</text>
+<text x="403.0" y="748" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >Prompt</text>
+<path d="M450 734 H471" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="473" y="695" width="256" height="82" rx="12" fill="#0e1726" stroke="#586b86" stroke-dasharray="5 5"/>
+<rect x="485" y="685" width="60" height="20" rx="6" fill="#1e3048" stroke="none" />
+<text x="515" y="700" font-size="13" fill="#dce7f8" font-weight="700" text-anchor="middle" >0–N</text>
+<rect x="487" y="712" width="96" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="535.0" y="730" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="535.0" y="748" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Tool Call</text>
+<path d="M588 734 H608" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="613" y="712" width="96" height="44" rx="10" fill="#3b301a" stroke="#f5cf77" stroke-opacity=".48"/>
+<text x="661.0" y="730" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Tool</text>
+<text x="661.0" y="748" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Output</text>
+<path d="M734 734 H756" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="761" y="712" width="92" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="807.0" y="730" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="807.0" y="748" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Answer</text>
+<rect x="348" y="674" width="517" height="116" rx="14" fill="none" stroke="#8d9ec1" stroke-dasharray="7 5" stroke-width="1.2"/>
+<rect x="368" y="664" width="60" height="20" rx="6" fill="#2b3651" stroke="none" />
+<text x="398" y="679" font-size="13" fill="#e0e7fa" font-weight="700" text-anchor="middle" >1–N</text>
+<rect x="32" y="816" width="1376" height="142" rx="14" fill="#121d2d" stroke="#28364b" />
+<rect x="32" y="832" width="3" height="110" rx="1" fill="#b9b2ff" stroke="none" />
+<rect x="51" y="875" width="35" height="30" rx="8" fill="#24324a" stroke="none" />
+<text x="68.5" y="896" font-size="14" fill="#d7e3f6" font-weight="700" text-anchor="middle" >05</text>
+<text x="99" y="896" font-size="18" fill="#e6edf3" font-weight="700" text-anchor="start" >+ Recorded thinking</text>
+<rect x="52" y="932" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="78" y="932" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="104" y="932" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="130" y="932" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="156" y="932" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="182" y="932" width="20" height="3" rx="1" fill="#2b3850" stroke="none" />
+<rect x="360" y="868" width="86" height="44" rx="10" fill="#332337" stroke="#f0a6cd" stroke-opacity=".48"/>
+<text x="403.0" y="886" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >User</text>
+<text x="403.0" y="904" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >Prompt</text>
+<path d="M450 890 H471" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="473" y="851" width="372" height="82" rx="12" fill="#0e1726" stroke="#586b86" stroke-dasharray="5 5"/>
+<rect x="485" y="841" width="60" height="20" rx="6" fill="#1e3048" stroke="none" />
+<text x="515" y="856" font-size="13" fill="#dce7f8" font-weight="700" text-anchor="middle" >0–N</text>
+<rect x="487" y="868" width="86" height="44" rx="10" fill="#182e45" stroke="#8ac9ff" stroke-opacity=".48"/>
+<text x="530.0" y="886" font-size="15" fill="#8ac9ff" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="530.0" y="904" font-size="15" fill="#8ac9ff" font-weight="600" text-anchor="middle" >Think</text>
+<path d="M578 890 H598" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="603" y="868" width="96" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="651.0" y="886" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="651.0" y="904" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Tool Call</text>
+<path d="M704 890 H724" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="729" y="868" width="96" height="44" rx="10" fill="#3b301a" stroke="#f5cf77" stroke-opacity=".48"/>
+<text x="777.0" y="886" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Tool</text>
+<text x="777.0" y="904" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Output</text>
+<path d="M850 890 H872" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="877" y="868" width="86" height="44" rx="10" fill="#182e45" stroke="#8ac9ff" stroke-opacity=".48"/>
+<text x="920.0" y="886" font-size="15" fill="#8ac9ff" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="920.0" y="904" font-size="15" fill="#8ac9ff" font-weight="600" text-anchor="middle" >Think</text>
+<path d="M967 890 H988" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="993" y="868" width="92" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="1039.0" y="886" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="1039.0" y="904" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Answer</text>
+<rect x="348" y="830" width="749" height="116" rx="14" fill="none" stroke="#8d9ec1" stroke-dasharray="7 5" stroke-width="1.2"/>
+<rect x="368" y="820" width="60" height="20" rx="6" fill="#2b3651" stroke="none" />
+<text x="398" y="835" font-size="13" fill="#e0e7fa" font-weight="700" text-anchor="middle" >1–N</text>
+<rect x="32" y="972" width="1376" height="142" rx="14" fill="#121d2d" stroke="#28364b" />
+<rect x="32" y="988" width="3" height="110" rx="1" fill="#c9afff" stroke="none" />
+<rect x="51" y="1031" width="35" height="30" rx="8" fill="#24324a" stroke="none" />
+<text x="68.5" y="1052" font-size="14" fill="#d7e3f6" font-weight="700" text-anchor="middle" >06</text>
+<text x="99" y="1052" font-size="18" fill="#e6edf3" font-weight="700" text-anchor="start" >+ System prompt</text>
+<rect x="52" y="1088" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="78" y="1088" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="104" y="1088" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="130" y="1088" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="156" y="1088" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="182" y="1088" width="20" height="3" rx="1" fill="#97a9e8" stroke="none" />
+<rect x="360" y="1024" width="96" height="44" rx="10" fill="#2e2548" stroke="#c9afff" stroke-opacity=".48"/>
+<text x="408.0" y="1042" font-size="15" fill="#c9afff" font-weight="600" text-anchor="middle" >System</text>
+<text x="408.0" y="1060" font-size="15" fill="#c9afff" font-weight="600" text-anchor="middle" >Prompt</text>
+<path d="M460 1046 H481" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="486" y="1024" width="86" height="44" rx="10" fill="#332337" stroke="#f0a6cd" stroke-opacity=".48"/>
+<text x="529.0" y="1042" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >User</text>
+<text x="529.0" y="1060" font-size="15" fill="#f0a6cd" font-weight="600" text-anchor="middle" >Prompt</text>
+<path d="M576 1046 H597" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="599" y="1007" width="372" height="82" rx="12" fill="#0e1726" stroke="#586b86" stroke-dasharray="5 5"/>
+<rect x="611" y="997" width="60" height="20" rx="6" fill="#1e3048" stroke="none" />
+<text x="641" y="1012" font-size="13" fill="#dce7f8" font-weight="700" text-anchor="middle" >0–N</text>
+<rect x="613" y="1024" width="86" height="44" rx="10" fill="#182e45" stroke="#8ac9ff" stroke-opacity=".48"/>
+<text x="656.0" y="1042" font-size="15" fill="#8ac9ff" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="656.0" y="1060" font-size="15" fill="#8ac9ff" font-weight="600" text-anchor="middle" >Think</text>
+<path d="M704 1046 H724" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="729" y="1024" width="96" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="777.0" y="1042" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="777.0" y="1060" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Tool Call</text>
+<path d="M830 1046 H850" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="855" y="1024" width="96" height="44" rx="10" fill="#3b301a" stroke="#f5cf77" stroke-opacity=".48"/>
+<text x="903.0" y="1042" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Tool</text>
+<text x="903.0" y="1060" font-size="15" fill="#f5cf77" font-weight="600" text-anchor="middle" >Output</text>
+<path d="M976 1046 H998" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="1003" y="1024" width="86" height="44" rx="10" fill="#182e45" stroke="#8ac9ff" stroke-opacity=".48"/>
+<text x="1046.0" y="1042" font-size="15" fill="#8ac9ff" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="1046.0" y="1060" font-size="15" fill="#8ac9ff" font-weight="600" text-anchor="middle" >Think</text>
+<path d="M1093 1046 H1114" fill="none" stroke="#65758e" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="1119" y="1024" width="92" height="44" rx="10" fill="#123a34" stroke="#7de4c4" stroke-opacity=".48"/>
+<text x="1165.0" y="1042" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >LLM</text>
+<text x="1165.0" y="1060" font-size="15" fill="#7de4c4" font-weight="600" text-anchor="middle" >Answer</text>
+<rect x="474" y="986" width="749" height="116" rx="14" fill="none" stroke="#8d9ec1" stroke-dasharray="7 5" stroke-width="1.2"/>
+<rect x="494" y="976" width="60" height="20" rx="6" fill="#2b3651" stroke="none" />
+<text x="524" y="991" font-size="13" fill="#e0e7fa" font-weight="700" text-anchor="middle" >1–N</text>
+<rect x="32" y="1144" width="1376" height="98" rx="14" fill="#192337" stroke="#32435f" />
+<text x="54" y="1171" font-size="13" fill="#7de4c4" font-weight="700" text-anchor="start" letter-spacing="1.2">1–N TURNS PER TRACE  ·  0–N TOOL CALL / RESPONSE PAIRS PER TURN</text>
+<text x="54" y="1199" font-size="17" fill="#e6edf3" font-weight="600" text-anchor="start" >0 → answer directly</text>
+<text x="335" y="1199" font-size="17" fill="#e6edf3" font-weight="600" text-anchor="start" >N → use one or more tools before answering</text>
+<text x="54" y="1224" font-size="14" fill="#a2b2c9" font-weight="400" text-anchor="start" >Outer box: repeat the turn 1–N times. Inner box: optional tool activity. System prompt: once, outside the turn.</text>
+</g></svg>

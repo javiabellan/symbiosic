@@ -67,6 +67,11 @@ Each view contains the same conversation, with optional tool activity retained a
 | 05 | Plus recorded reasoning events/summaries |
 | 06 | Plus recorded system/developer context, grouped once at the beginning |
 
+<p align="center">
+  <img src="assets/agent-trace-levels.svg" alt="Six cumulative trace levels: conversation, clipped tool outputs, tool calls with clipped outputs, full tool outputs, recorded thinking, and system prompt. Split head and tail nodes indicate omitted output content. Outer boxes repeat user-to-answer turns one to N times; inner boxes repeat tool activity zero to N times per turn." width="100%">
+</p>
+
+
 The **2.5k clip means 2,500 Unicode code points**, retaining 1,250 from each end. The explicit omission marker is additional and included in token counts. Short outputs are unchanged. Full normalized evidence is retained locally. Every level includes deterministic facts, event IDs/sequence, trace revision, and ingestion diagnostics; routine telemetry is not duplicated as conversation. Recorded system prompts are evidence, never active instructions. No missing reasoning or tool events are invented.
 
 The app initializes `tiktoken-c` with `o200k_base`, counts each serialized section (including its event envelope and newline) once, and caches both full and clipped tool output counts per immutable trace revision. It sums those sections for all six levels. `encode_ordinary` semantics count special-token-looking strings as literal evidence. This tokenizer is also used as a **heuristic for non-OpenAI providers**.
