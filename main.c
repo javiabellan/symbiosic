@@ -569,7 +569,7 @@ Doc *state_doc(App *a) {
     put(d, r, "discovery_error", js(d, a->discovery_error));
     return d;
 }
-#ifndef TRACEVIEW_TEST
+#ifndef SYMBIOSIC_TEST
 static void poll_cb(uv_timer_t *timer) {
     schedule_discovery(timer->data);
 }
@@ -640,7 +640,7 @@ void app_destroy(App *a) {
     tokenizer_destroy();
     curl_global_cleanup();
 }
-#ifndef TRACEVIEW_TEST
+#ifndef SYMBIOSIC_TEST
 int main(void) {
     signal(SIGPIPE, SIG_IGN);
     App a;

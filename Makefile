@@ -14,22 +14,22 @@ LDLIBS += $(TIKTOKEN_DIR)/libtiktoken_c.a $(if $(filter Darwin,$(shell uname -s)
 SOURCES = prompts.c directory.c review.c fidelity.c providers.c util.c store.c normalize.c query.c ai.c chat.c main.c http.c
 OBJECTS = $(SOURCES:.c=.o)
 .PHONY: all test clean sanitize deps
-all: symbiosic traceview
+all: symbiosic symbiosic
 deps:
 	sh scripts/install-tiktoken.sh $(TIKTOKEN_DIR)
 symbiosic: $(OBJECTS) $(TIKTOKEN_DIR)/libtiktoken_c.a
 	$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(LDLIBS)
-traceview: symbiosic
-	ln -sf symbiosic traceview
+symbiosic: symbiosic
+	ln -sf symbiosic symbiosic
 %.o: %.c app.h $(TIKTOKEN_DIR)/tiktoken.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
-tests/test_traceview: tests/test.c tests/review_tests.h $(SOURCES) app.h $(TIKTOKEN_DIR)/libtiktoken_c.a
-	$(CC) $(CPPFLAGS) $(CFLAGS) -DTRACEVIEW_TEST -I. $(LDFLAGS) -o $@ tests/test.c $(SOURCES) $(LDLIBS)
-test: tests/test_traceview traceview
-	./tests/test_traceview
+tests/test_symbiosic: tests/test.c tests/review_tests.h $(SOURCES) app.h $(TIKTOKEN_DIR)/libtiktoken_c.a
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DSYMBIOSIC_TEST -I. $(LDFLAGS) -o $@ tests/test.c $(SOURCES) $(LDLIBS)
+test: tests/test_symbiosic symbiosic
+	./tests/test_symbiosic
 	python3 tests/http_test.py
 sanitize: $(TIKTOKEN_DIR)/libtiktoken_c.a
-	$(CC) $(CPPFLAGS) -std=c17 -Wall -Wextra -g -O1 -fsanitize=address,undefined -DTRACEVIEW_TEST -I. $(LDFLAGS) -o tests/test_sanitize tests/test.c $(SOURCES) $(LDLIBS)
+	$(CC) $(CPPFLAGS) -std=c17 -Wall -Wextra -g -O1 -fsanitize=address,undefined -DSYMBIOSIC_TEST -I. $(LDFLAGS) -o tests/test_sanitize tests/test.c $(SOURCES) $(LDLIBS)
 	./tests/test_sanitize
 clean:
-	rm -f symbiosic traceview $(OBJECTS) tests/test_traceview tests/test_sanitize
+	rm -f symbiosic symbiosic $(OBJECTS) tests/test_symbiosic tests/test_sanitize

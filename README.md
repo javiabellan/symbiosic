@@ -1,4 +1,4 @@
-# traceview
+# symbiosic
 
 A local, single-user C17 proof of concept for exploring Claude Code and Codex transcripts. It normalizes native JSONL, calculates deterministic statistics, previews the cost of per-trace Decisions analysis, and investigates a frozen scope through a provider-configurable chat with four read-only tools.
 
@@ -14,7 +14,7 @@ cp env.template .env
 # Edit .env and enter your own OPENAI_API_KEY, if you want paid operations.
 make deps  # downloads and verifies the pinned tiktoken-c release
 make
-./traceview
+./symbiosic
 ```
 
 On Linux, install the same libraries using your distribution's development packages, or install upstream C releases into a system prefix. Package names and llhttp include locations vary by distribution. The build uses pkg-config for libcurl, libuv and yyjson, and links llhttp directly when its pkg-config file is unavailable. Flags are overridable:
@@ -37,7 +37,7 @@ For a separate, keyless demonstration using the checked-in fixtures:
 
 ```sh
 OPENAI_API_KEY= DATA_DIR=./data/demo \
-  CLAUDE_ROOT=./tests/demo/claude CODEX_ROOT=./tests/demo/codex ./traceview
+  CLAUDE_ROOT=./tests/demo/claude CODEX_ROOT=./tests/demo/codex ./symbiosic
 ```
 
 The demo roots contain sanitized example transcripts. They are independent from the native roots in `env.template`. Providers are recognized from record structure; repeated paths across configured roots are imported once.
@@ -134,7 +134,7 @@ make sanitize   # AddressSanitizer and UndefinedBehaviorSanitizer on C tests
 make clean
 ```
 
-Tests never require a key or call a paid API. `TRACEVIEW_TEST` is the only build exposing the injectable transport function pointer; there is no runtime fake endpoint or credential-forwarding override. Python 3 is used only by the additional HTTP integration test. The normal application links libcurl, libuv, yyjson, llhttp, and the tiktoken-c static library.
+Tests never require a key or call a paid API. `SYMBIOSIC_TEST` is the only build exposing the injectable transport function pointer; there is no runtime fake endpoint or credential-forwarding override. Python 3 is used only by the additional HTTP integration test. The normal application links libcurl, libuv, yyjson, llhttp, and the tiktoken-c static library.
 
 Tests cover all six fidelity boundaries, long-trace import/reload, chat budget rejection, Unicode clipping, provider adapters/model catalogs, settings/key handling, and sanitized native samples, deduplication, partial lines, replacement/deletion, usage resets, scope escapes, pagination, quotes, cache reuse, fractional scores/refusals, unsaved paid results, restart interruption, saved chat audits, fragmented HTTP, local request guards and simultaneous ingestion during a slow fake network request. macOS builds and tests were run locally. Linux portability is supported by the POSIX/libuv implementation and overridable flags; a Linux runtime was not available in this workspace.
 
@@ -156,4 +156,4 @@ Contracts and reference material:
 
 - [Decisions API](https://developers.openai.com/api/reference/resources/decisions/methods/create) and [Decisions guide, scoring and pricing](https://developers.openai.com/api/docs/guides/decisions).
 - [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) and [Responses function calling](https://developers.openai.com/api/docs/guides/function-calling).
-- [Claude Code adapter notes](https://github.com/letta-ai/trajectory/blob/main/src/adapters/claude-code/README.md) and [Codex adapter notes](https://github.com/letta-ai/trajectory/blob/main/src/adapters/codex/README.md). These informed the supported field paths; traceview does not depend on Letta or validate against its schema.
+- [Claude Code adapter notes](https://github.com/letta-ai/trajectory/blob/main/src/adapters/claude-code/README.md) and [Codex adapter notes](https://github.com/letta-ai/trajectory/blob/main/src/adapters/codex/README.md). These informed the supported field paths; symbiosic does not depend on Letta or validate against its schema.

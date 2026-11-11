@@ -22,7 +22,7 @@ def check(condition, message):
         raise AssertionError(message)
 
 
-with tempfile.TemporaryDirectory(prefix="traceview-http-") as temporary:
+with tempfile.TemporaryDirectory(prefix="symbiosic-http-") as temporary:
     base = Path(temporary)
     claude, codex, data = (base / p for p in ("claude", "codex", "data"))
     claude.mkdir()

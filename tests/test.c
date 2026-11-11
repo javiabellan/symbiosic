@@ -663,7 +663,7 @@ static void test_concurrency(App *a, const char *cp) {
 #include "review_tests.h"
 
 int main(void) {
-    char tmp[] = "/tmp/traceview-c-test-XXXXXX";
+    char tmp[] = "/tmp/symbiosic-c-test-XXXXXX";
     CHECK(mkdtemp(tmp));
     char *claude = fmt("%s/claude", tmp), *codex = fmt("%s/codex", tmp),
          *data = fmt("%s/data", tmp), *e = NULL;

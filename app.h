@@ -1,5 +1,5 @@
-#ifndef TRACEVIEW_APP_H
-#define TRACEVIEW_APP_H
+#ifndef SYMBIOSIC_APP_H
+#define SYMBIOSIC_APP_H
 #define _POSIX_C_SOURCE 200809L
 #include <uv.h>
 #include <yyjson.h>
@@ -85,7 +85,7 @@ typedef struct {
     char *error;
     bool ambiguous;
 } Transport;
-#ifdef TRACEVIEW_TEST
+#ifdef SYMBIOSIC_TEST
 typedef Transport (*TestTransport)(const char *, const char *, const char *);
 extern TestTransport test_transport;
 #endif

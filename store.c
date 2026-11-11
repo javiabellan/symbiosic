@@ -310,7 +310,7 @@ static void load_docs(App *a, const char *dir, Docs *out, bool nested) {
                 }
                 docs_push(out, j);
             } else
-                fprintf(stderr, "traceview: cannot load %s: %s\n", p, err ? err : "invalid JSON");
+                fprintf(stderr, "symbiosic: cannot load %s: %s\n", p, err ? err : "invalid JSON");
             free(s);
             free(err);
         }
@@ -338,7 +338,7 @@ bool store_open(App *a, char **error) {
     l.l_type = F_WRLCK;
     l.l_whence = SEEK_SET;
     if (a->lock_fd < 0 || fcntl(a->lock_fd, F_SETLK, &l) < 0) {
-        *error = xstrdup("Cannot acquire instance.lock; another traceview may use this DATA_DIR");
+        *error = xstrdup("Cannot acquire instance.lock; another symbiosic may use this DATA_DIR");
         return false;
     }
     p = fmt("%s/traces", a->cfg.data_dir);
@@ -353,7 +353,7 @@ bool store_open(App *a, char **error) {
         if (t)
             traces_push(&a->traces, t);
         else
-            fprintf(stderr, "traceview: snapshot ignored: %s (%s)\n", f, err ? err : "invalid");
+            fprintf(stderr, "symbiosic: snapshot ignored: %s (%s)\n", f, err ? err : "invalid");
         free(err);
         free(f);
     }
@@ -374,7 +374,7 @@ bool store_open(App *a, char **error) {
                       "replayed."));
             char *err = NULL;
             if (!save_doc(a, "jobs", sget(root(j), "id"), j, &err)) {
-                fprintf(stderr, "traceview: %s\n", err);
+                fprintf(stderr, "symbiosic: %s\n", err);
                 free(err);
             }
         }

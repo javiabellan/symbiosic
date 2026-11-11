@@ -6,7 +6,7 @@
 #include <time.h>
 #include <math.h>
 
-#ifdef TRACEVIEW_TEST
+#ifdef SYMBIOSIC_TEST
 TestTransport test_transport = NULL;
 #endif
 static size_t receive(void *ptr, size_t size, size_t n, void *ctx) {
@@ -21,7 +21,7 @@ static size_t receive(void *ptr, size_t size, size_t n, void *ctx) {
 }
 Transport provider_http(Config *cfg, Provider provider, const char *endpoint, const char *body) {
     const char *key = provider_key(cfg, provider);
-#ifdef TRACEVIEW_TEST
+#ifdef SYMBIOSIC_TEST
     if (test_transport)
         return test_transport(endpoint, body, key);
 #endif

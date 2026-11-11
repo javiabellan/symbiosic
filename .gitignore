@@ -1,8 +1,8 @@
 .env
 data/
-traceview
+symbiosic
 *.o
-tests/test_traceview
+tests/test_symbiosic
 tests/test_sanitize
 .DS_Store
 

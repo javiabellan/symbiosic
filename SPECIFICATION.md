@@ -1,4 +1,4 @@
-Build a local, single-user proof of concept named `traceview`: ingest Claude Code and Codex logs, normalize them into readable JSONL, persist everything in files, analyze individual traces with OpenAI Decisions, and investigate traces through a tool-using chat. Use C17, libcurl, yyjson, libuv, llhttp, tiktoken-c, and vanilla HTML/CSS/JavaScript.
+Build a local, single-user proof of concept named `symbiosic`: ingest Claude Code and Codex logs, normalize them into readable JSONL, persist everything in files, analyze individual traces with OpenAI Decisions, and investigate traces through a tool-using chat. Use C17, libcurl, yyjson, libuv, llhttp, tiktoken-c, and vanilla HTML/CSS/JavaScript.
 
 Optimize for understandable code and a demonstrable end-to-end workflow. This specification omits production infrastructure; AI inputs use model token budgets instead of fixed trace byte caps. API contracts and initial prices below were checked on November 8, 2026.
 
@@ -45,7 +45,7 @@ DECISION_INPUT_USD_PER_M=0.10
 POLL_MS=2000
 ```
 
-Setup: copy `env.template` to `.env`, enter the key, build, then run `./traceview`. Never automatically copy an environment key into a file. Ignore `.env`, `data/`, the executable, and object files in Git. Missing key permits ingestion and browsing but disables paid operations.
+Setup: copy `env.template` to `.env`, enter the key, build, then run `./symbiosic`. Never automatically copy an environment key into a file. Ignore `.env`, `data/`, the executable, and object files in Git. Missing key permits ingestion and browsing but disables paid operations.
 
 Model identifiers and prices are configuration, not constants scattered through code. The initial Decisions rate applies to standard short-context processing through `https://api.openai.com`; do not apply it to Responses. Display its checked date. GPT-6 Luna supports Responses function calling, making it a small default for both roles. [Model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna).
 

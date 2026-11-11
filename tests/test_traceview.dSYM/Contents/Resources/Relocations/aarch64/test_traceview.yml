@@ -1,6 +1,6 @@
 ---
 triple:          'arm64-apple-darwin'
-binary-path:     'tests/test_traceview'
+binary-path:     'tests/test_symbiosic'
 relocations:
   - { offsetInCU: 0x26, offset: 0x26, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x100004558, symSize: 0x537C }
   - { offsetInCU: 0x65, offset: 0x65, size: 0x8, addend: 0x0, symName: _test_app, symObjAddr: 0x20DC8, symBinAddr: 0x100851008, symSize: 0x0 }

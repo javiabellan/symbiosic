@@ -10,7 +10,7 @@
 #include <time.h>
 
 static void oom(void) {
-    fputs("traceview: allocation failed; exiting without replacing unfinished files\n", stderr);
+    fputs("symbiosic: allocation failed; exiting without replacing unfinished files\n", stderr);
     exit(1);
 }
 void *xmalloc(size_t n) {
