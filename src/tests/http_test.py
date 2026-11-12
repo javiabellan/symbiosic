@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix="symbiosic-http-") as temporary:
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         line = p.stdout.readline().strip()
         if line != f"http://127.0.0.1:{port}":
-            raise AssertionError(f"Server failed to start: {line} {p.stderr.read()}")
+            raise AssertionError(f"Server failed to start ({p.poll()}): {line} {p.stderr.read()}")
         return p
 
     def stop(p):

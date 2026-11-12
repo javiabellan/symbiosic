@@ -14,3 +14,4 @@ src/tests/test_sanitize
 src/test-results/
 __pycache__/
 *.pyc
+src/tiktoken_c.dll

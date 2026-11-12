@@ -185,6 +185,11 @@ def windows(stage, out, target, binary):
                 continue
             copied.add(name.lower())
             source = next((p/name for p in [Path('/usr/bin'),Path('/mingw64/bin')] if (p/name).exists()),None)
+            if source is None and name.lower().startswith(('vcruntime', 'msvcp')):
+                runtime = Path('/c/Windows/System32')/name
+                if not runtime.exists():
+                    raise RuntimeError('Missing redistributable runtime: '+name)
+                source = runtime
             if source:
                 shutil.copy2(source,root/'bin'/name)
                 pending.append(root/'bin'/name)
