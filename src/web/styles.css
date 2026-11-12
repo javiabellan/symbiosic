@@ -541,24 +541,6 @@ small,
   line-height: 1.7;
   margin-top: 10px;
 }
-.model-trigger {
-  width: 100%;
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  text-align: left;
-  line-height: 1.8;
-  background: #f9fbf9;
-}
-.model-trigger strong {
-  font-weight: 500;
-  font-size: 12px;
-}
-.model-provider {
-  font-size: 9px;
-  color: var(--muted);
-}
 .analysis-nav {
   display: flex;
   flex-direction: column;
@@ -947,13 +929,8 @@ small,
   border-color: #ead7d7;
 }
 .app-error {
-  position: fixed;
-  bottom: 22px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
-  box-shadow: var(--shadow);
-  max-width: 600px;
+  position: static;
+  flex-shrink: 0;
   display: none;
 }
 .chat-messages {
@@ -1038,11 +1015,6 @@ dialog::backdrop {
   background: none;
   border-color: transparent;
   color: var(--muted);
-}
-.modal-body {
-  padding: 26px;
-  max-height: 70vh;
-  overflow: auto;
 }
 .modal-foot {
   padding: 18px 26px;
@@ -1157,55 +1129,6 @@ dialog::backdrop {
 }
 .domain-form textarea {
   font-size: 12px;
-}
-.quote-dialog {
-  width: 540px;
-}
-.quote-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 15px;
-  margin: 25px 0;
-}
-.quote-metric {
-  padding: 15px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: #fff;
-}
-.quote-metric strong {
-  font-size: 19px;
-  font-weight: 500;
-  display: block;
-}
-.quote-metric span {
-  font-size: 10px;
-  color: var(--muted);
-}
-.model-dialog {
-  width: 700px;
-}
-.model-grid {
-  display: grid;
-  grid-template-columns: 1fr 1.6fr 1fr;
-  gap: 14px;
-}
-.model-grid select {
-  height: 195px;
-  padding: 4px;
-  background: #fff;
-  font-size: 12px;
-}
-.model-grid option {
-  padding: 8px;
-}
-.model-grid label {
-  font-size: 10px;
-  letter-spacing: 1px;
-  color: var(--muted);
-  display: block;
-  margin-bottom: 9px;
-  text-transform: uppercase;
 }
 .file-preview {
   width: 850px;

@@ -73,8 +73,11 @@ async function open(width = 1440) {
   await page.goto(url);
   await page.locator(".trace-header h1").waitFor();
   if (process.env.SCREENSHOT_DIR && [390, 1440].includes(width)) {
-    fs.mkdirSync(process.env.SCREENSHOT_DIR, {recursive: true});
-    await page.screenshot({path: path.join(process.env.SCREENSHOT_DIR, `workspace-${width}.png`), fullPage: true});
+    fs.mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true });
+    await page.screenshot({
+      path: path.join(process.env.SCREENSHOT_DIR, `workspace-${width}.png`),
+      fullPage: true,
+    });
   }
   return { page, errors };
 }
@@ -96,6 +99,35 @@ test("previews use the workspace; Settings is the only dialog", async () => {
   assert.deepEqual(errors, []);
   await page.close();
 });
+test("native title changes refresh the selected heading", async () => {
+  const { page, errors } = await open();
+  await page
+    .locator(".session")
+    .filter({ has: page.locator(".badge.codex") })
+    .click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector(".trace-header h1")?.textContent === "Fix the failing parser test.",
+  );
+  fs.writeFileSync(
+    path.join(temporary, "session_index.jsonl"),
+    JSON.stringify({ id: "codex-session", thread_name: "Renamed native session" }),
+  );
+  await page.waitForFunction(
+    () =>
+      document.querySelector(".trace-header h1")?.textContent === "Renamed native session" &&
+      document.querySelector(".session.active .session-title")?.textContent ===
+        "Renamed native session",
+  );
+  assert.equal(
+    await page.locator(".session.active .session-title").innerText(),
+    "Renamed native session",
+  );
+  fs.unlinkSync(path.join(temporary, "session_index.jsonl"));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 test("provider → model → thinking selection and inline estimate", async () => {
   const { page, errors } = await open();
   let paidCalls = 0;

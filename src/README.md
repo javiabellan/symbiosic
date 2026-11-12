@@ -23,7 +23,7 @@ Open `http://127.0.0.1:4317`. Stop with Ctrl-C. Intel macOS also needs Rust/Carg
 
 Alternatively, with yyjson and llhttp installed: `make deps && make && ./symbiosic`.
 
-Windows builds use the MSYS2 **MSYS** shell:
+Windows builds use the MSYS2 **MSYS** shell. Tests need native symlinks (`MSYS=winsymlinks:nativestrict`) and Windows Developer Mode or administrator rights:
 
 ```sh
 pacman -S --needed gcc make cmake pkgconf libcurl-devel libzstd-devel libuv-devel python unzip binutils \

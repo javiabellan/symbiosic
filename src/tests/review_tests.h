@@ -100,6 +100,11 @@ static void test_symbiosic(App *a) {
     put(t->doc, meta(t), "cwd", js(t->doc, project));
     Doc *manifest = directory_manifest(a, project, &error);
     CHECK(manifest && !error);
+    if (integer(get(root(manifest), "file_count")) != 1) {
+        char *debug = json(root(manifest));
+        fprintf(stderr, "directory_manifest: %s\n", debug);
+        free(debug);
+    }
     CHECK(integer(get(root(manifest), "file_count")) == 1);
     CHECK(integer(get(get(root(manifest), "languages"), "Python")) == 15);
     Doc *read = directory_read(project, "../outside", 0, 100, NULL);

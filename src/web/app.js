@@ -1785,6 +1785,12 @@ async function refreshState() {
         : "Local workspace";
     if (changed) {
       renderNav();
+      // Index renames refresh the heading without resetting the reader's position.
+      const selected = next.traces.find((item) => item.trace_id === scope?.id);
+      if (scope?.type === "trace" && trace && selected && trace.meta.title !== selected.title) {
+        trace.meta.title = selected.title;
+        renderTraceHeader();
+      }
     }
     if (first) {
       const group = next.groups?.[0];

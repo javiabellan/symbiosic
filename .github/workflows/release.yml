@@ -63,6 +63,8 @@ jobs:
           fi
       - name: Windows build and tests
         if: runner.os == 'Windows'
+        env:
+          MSYS: winsymlinks:nativestrict
         shell: msys2 {0}
         run: |
           cd src
