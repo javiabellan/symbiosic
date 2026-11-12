@@ -53,6 +53,7 @@ def copy_assets(root, binary):
     licenses = root/'licenses'
     licenses.mkdir()
     shutil.copy2(SRC/'.deps/LICENSE.txt', licenses/'tiktoken.txt')
+    shutil.copytree(SRC/'packaging/licenses', licenses, dirs_exist_ok=True)
     for dependency in ['yyjson','llhttp']:
         source = SRC/'build/_deps'/f'{dependency}-src'
         for name in ['LICENSE','LICENSE-MIT']:
@@ -196,7 +197,8 @@ def windows(stage, out, target, binary):
     icon = stage/'icon.ico'
     icon.write_bytes(entries+b''.join(images))
     resource = stage/'icon.rc'
-    resource.write_text('1 ICON "'+icon.as_posix()+'"\n')
+    icon_path = run('cygpath', '-m', icon).strip()
+    resource.write_text('1 ICON "'+icon_path+'"\n')
     run('/mingw64/bin/windres',resource,'-o',stage/'icon.o')
     run('/mingw64/bin/gcc','-municode','-static',SRC/'packaging/windows.c',stage/'icon.o','-lshell32','-o',root/'Symbiosic.exe')
     # Distribute MSYS package notices alongside the runtime.
@@ -218,7 +220,7 @@ def main():
     args = parser.parse_args()
     args.out.mkdir(parents=True,exist_ok=True)
     binary = args.binary.resolve()
-    if args.target.startswith('windows') and not binary.exists():
+    if args.target.startswith('windows') and binary.suffix != '.exe':
         binary = binary.with_suffix('.exe')
     with tempfile.TemporaryDirectory(prefix='symbiosic-package-') as temporary:
         build = macos if args.target.startswith('macos') else linux if args.target.startswith('linux') else windows

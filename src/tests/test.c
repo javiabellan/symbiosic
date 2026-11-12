@@ -689,6 +689,7 @@ static void test_concurrency(App *a, const char *cp) {
 #include "review_tests.h"
 #include "provider_tests.h"
 #include "title_tests.h"
+#include "prompt_tests.h"
 
 int main(void) {
     char tmp[] = "/tmp/symbiosic-c-test-XXXXXX";
@@ -726,6 +727,7 @@ int main(void) {
     test_native_titles(&a);
     test_catalog(&a);
     test_symbiosic(&a);
+    test_prompt_newlines(&a);
     test_chat_restart(&a);
     test_chat_budget(&a);
     test_concurrency(&a, cp);
