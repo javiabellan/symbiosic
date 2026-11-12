@@ -103,8 +103,13 @@ def macos(stage, out, target, binary):
             suffix = '@2x' if multiplier == 2 else ''
             (iconset/f'icon_{size}x{size}{suffix}.png').write_bytes(png(size*multiplier))
     run('iconutil','-c','icns',iconset,'-o',resources/'AppIcon.icns')
+    # Match the actual executable deployment target rather than guessing an OS version.
+    versions = []
+    for executable in [native/APP, resources/'bin'/binary.name, *(resources/'lib').iterdir()]:
+        versions.extend(tuple(map(int, value.split('.'))) for value in re.findall(r'\bminos\s+([\d.]+)', run('otool', '-l', executable)))
+    minimum_os = '.'.join(map(str, max(versions)))
     with (contents/'Info.plist').open('wb') as file:
-        plistlib.dump({'CFBundleName':APP,'CFBundleDisplayName':APP,'CFBundleIdentifier':'io.github.javiabellan.symbiosic','CFBundleVersion':'1','CFBundleShortVersionString':'0.1.0','CFBundlePackageType':'APPL','CFBundleExecutable':APP,'CFBundleIconFile':'AppIcon','LSMinimumSystemVersion':'14.0','NSHighResolutionCapable':True},file)
+        plistlib.dump({'CFBundleName':APP,'CFBundleDisplayName':APP,'CFBundleIdentifier':'io.github.javiabellan.symbiosic','CFBundleVersion':'1','CFBundleShortVersionString':'0.1.0','CFBundlePackageType':'APPL','CFBundleExecutable':APP,'CFBundleIconFile':'AppIcon','LSMinimumSystemVersion':minimum_os,'NSHighResolutionCapable':True},file)
     run('codesign','--force','--deep','--sign','-',app)
     image = stage/'image'
     image.mkdir()
@@ -175,7 +180,11 @@ def windows(stage, out, target, binary):
     root = stage/'Symbiosic'
     copy_assets(root,binary)
     shutil.copy2(SRC/'.deps/tiktoken_c.dll',root/'bin/tiktoken_c.dll')
-    shutil.copy2('/etc/ssl/certs/ca-bundle.crt', root/'assets/cacert.pem')
+    cert_paths = [Path(run('curl-config', '--ca').strip()), Path('/usr/ssl/certs/ca-bundle.crt'), Path('/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem'), Path('/etc/ssl/cert.pem')]
+    certificate = next((path for path in cert_paths if path.is_file()), None)
+    if certificate is None:
+        raise RuntimeError('The configured curl CA bundle is missing')
+    shutil.copy2(certificate, root/'assets/cacert.pem')
     pending = [root/'bin'/binary.name,root/'bin/tiktoken_c.dll']
     copied = set()
     while pending:

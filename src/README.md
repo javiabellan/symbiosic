@@ -26,7 +26,7 @@ Alternatively, with yyjson and llhttp installed: `make deps && make && ./symbios
 Windows builds use the MSYS2 **MSYS** shell. Tests need native symlinks (`MSYS=winsymlinks:nativestrict`) and Windows Developer Mode or administrator rights:
 
 ```sh
-pacman -S --needed gcc make cmake pkgconf libcurl-devel libzstd-devel libuv-devel python unzip binutils \
+pacman -S --needed gcc make cmake pkgconf ca-certificates libcurl-devel libzstd-devel libuv-devel python unzip binutils \
   mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
 sh scripts/install-tiktoken.sh .deps
 cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release

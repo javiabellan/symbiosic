@@ -44,7 +44,7 @@ jobs:
         with:
           msystem: MSYS
           update: true
-          install: gcc make cmake pkgconf libcurl-devel libzstd-devel libuv-devel python unzip binutils mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
+          install: gcc make cmake pkgconf ca-certificates libcurl-devel libzstd-devel libuv-devel python unzip binutils mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
       - name: Unix build and tests
         if: runner.os != 'Windows'
         working-directory: src

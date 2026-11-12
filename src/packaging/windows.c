@@ -87,10 +87,7 @@ int wmain(void) {
     if (strncmp(line, "http://127.0.0.1:", sizeof("http://127.0.0.1:") - 1) == 0) {
         wchar_t url[URL_CAP];
         MultiByteToWideChar(CP_UTF8, 0, line, -1, url, URL_CAP);
-        wchar_t *newline = wcschr(url, L'\n');
-        if (newline) {
-            *newline = 0;
-        }
+        url[wcscspn(url, L"\r\n")] = 0;
         ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
         wprintf(L"Close this window to stop Symbiosic.\n");
     }
