@@ -16,7 +16,7 @@ import zlib
 
 SRC = Path(__file__).resolve().parent.parent
 APP = 'Symbiosic'
-VERSION = '0.1.1'
+VERSION = '0.1.2'
 SYSTEM_LIBS = {'libc.so.6', 'libm.so.6', 'libpthread.so.0', 'libdl.so.2', 'librt.so.1', 'ld-linux-x86-64.so.2'}
 
 def run(*args):

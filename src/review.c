@@ -10,6 +10,7 @@ typedef enum { EVIDENCE_AGENTIC, EVIDENCE_FULL } EvidenceMode;
 typedef enum { TOOLS_DISABLED, TOOLS_ENABLED } ToolMode;
 
 #define REVIEW_CALLS 8
+#define RESULT_ATTEMPTS 3
 static Doc *read_json(const char *path, char **error) {
     size_t n;
     char *s = read_file(path, MAX_SCHEMA_BYTES, &n, error);
@@ -32,50 +33,110 @@ static void msg(Doc *d, J *input, const char *role, const char *text) {
 static char *response_text(J *r) {
     Buf b = {0};
     size_t i, n, j, k;
-    J *v, *p;
-    yyjson_mut_arr_foreach(get(r, "output"), i, n, v)
-        yyjson_mut_arr_foreach(get(v, "content"), j, k, p) {
+    J *v, *p, *answer = NULL;
+    yyjson_mut_arr_foreach(get(r, "output"), i, n, v) {
+        const char *phase = sget(v, "phase");
+        if (strcmp(sget(v, "type"), "message") ||
+            (*phase && strcmp(phase, "final_answer"))) {
+            continue;
+        }
+        /* Commentary and final answers are separate messages, never one JSON string. */
+        if (!answer || !strcmp(phase, "final_answer") ||
+            strcmp(sget(answer, "phase"), "final_answer")) {
+            answer = v;
+        }
+    }
+    yyjson_mut_arr_foreach(get(answer, "content"), j, k, p) {
         if (!strcmp(sget(p, "type"), "output_text")) {
             buf_add(&b, sget(p, "text"));
         }
     }
     return b.s ? b.s : xstrdup("");
 }
-static bool result_valid(J *r, ReviewKind chat) {
-    if (!yyjson_mut_is_obj(r)) {
-        return false;
-    }
-    if (chat) {
-        return yyjson_mut_is_str(get(r, "answer")) && *sget(r, "answer");
-    }
-    const char *keys[] = {"project_description", "issues_summary", "suggested_global_fix"};
-    for (size_t i = 0; i < 3; i++) {
-        if (!yyjson_mut_is_str(get(r, keys[i]))) {
-            return false;
-        }
-    }
-    if (strcmp(sget(r, "coverage"), "full") && strcmp(sget(r, "coverage"), "partial")) {
-        return false;
-    }
-    if (!yyjson_mut_is_arr(get(r, "issues")) || !yyjson_mut_is_arr(get(r, "limitations"))) {
-        return false;
+/* Validate the types, required fields, enums and closed objects used by our result schemas. */
+static char *result_error(J *r, J *schema, const char *path) {
+    const char *type = sget(schema, "type");
+    if ((!strcmp(type, "object") && !yyjson_mut_is_obj(r)) ||
+        (!strcmp(type, "array") && !yyjson_mut_is_arr(r)) ||
+        (!strcmp(type, "string") && !yyjson_mut_is_str(r))) {
+        return fmt("JSON validation error at %s: expected %s", path, type);
     }
     size_t i, n;
-    J *v;
-    yyjson_mut_arr_foreach(get(r, "issues"), i, n, v) {
-        const char *fields[] = {"title", "severity", "evidence", "explanation", "suggested_fix"};
-        for (size_t j = 0; j < 5; j++) {
-            if (!yyjson_mut_is_str(get(v, fields[j]))) {
-                return false;
+    J *v, *key;
+    if (yyjson_mut_is_arr(get(schema, "enum"))) {
+        bool match = false;
+        yyjson_mut_arr_foreach(get(schema, "enum"), i, n, v) {
+            if (yyjson_mut_equals(r, v)) {
+                match = true;
+                break;
             }
         }
-        if (strcmp(sget(v, "severity"), "low") && strcmp(sget(v, "severity"), "medium") &&
-            strcmp(sget(v, "severity"), "high")) {
-            return false;
+        if (!match) {
+            char *allowed = json(get(schema, "enum"));
+            char *error = fmt("JSON validation error at %s: expected one of %s", path, allowed);
+            free(allowed);
+            return error;
         }
     }
-    yyjson_mut_arr_foreach(get(r, "limitations"), i, n, v) if (!yyjson_mut_is_str(v)) return false;
-    return true;
+    if (yyjson_mut_is_obj(r)) {
+        J *properties = get(schema, "properties");
+        yyjson_mut_arr_foreach(get(schema, "required"), i, n, v) {
+            if (!get(r, str(v))) {
+                return fmt("JSON validation error at %s.%s: required field is missing", path,
+                           str(v));
+            }
+        }
+        yyjson_mut_obj_foreach(r, i, n, key, v) {
+            J *field = get(properties, str(key));
+            if (!field && yyjson_mut_is_false(get(schema, "additionalProperties"))) {
+                return fmt("JSON validation error at %s: unexpected field (additionalProperties "
+                           "is false)", path);
+            }
+            if (field) {
+                char *child = fmt("%s.%s", path, str(key));
+                char *error = result_error(v, field, child);
+                free(child);
+                if (error) {
+                    return error;
+                }
+            }
+        }
+    } else if (yyjson_mut_is_arr(r)) {
+        yyjson_mut_arr_foreach(r, i, n, v) {
+            char *child = fmt("%s[%zu]", path, i);
+            char *error = result_error(v, get(schema, "items"), child);
+            free(child);
+            if (error) {
+                return error;
+            }
+        }
+    }
+    return NULL;
+}
+static const char *response_failure(J *r) {
+    if (jbool(get(r, "refused"))) {
+        return "The provider refused the analysis. No automatic retry was made.";
+    }
+    size_t i, n, j, k;
+    J *v, *p;
+    yyjson_mut_arr_foreach(get(r, "output"), i, n, v) {
+        yyjson_mut_arr_foreach(get(v, "content"), j, k, p) {
+            if (!strcmp(sget(p, "type"), "refusal")) {
+                return "The provider refused the analysis. No automatic retry was made.";
+            }
+        }
+    }
+    if (!strcmp(sget(r, "status"), "incomplete")) {
+        return "The provider returned an incomplete response. Increase the output token limit "
+               "or reduce reasoning effort. No automatic retry was made.";
+    }
+    if (get(r, "error") && !yyjson_mut_is_null(get(r, "error"))) {
+        return "The provider reported a response error. No automatic retry was made.";
+    }
+    if (*sget(r, "status") && strcmp(sget(r, "status"), "completed")) {
+        return "The provider did not complete the response. No automatic retry was made.";
+    }
+    return NULL;
 }
 static Doc *source_list(J *source, size_t offset) {
     Doc *d = doc_new();
@@ -246,7 +307,14 @@ static Doc *request_wire(Config *cfg, J *quote, J *input, const char *prompt,
     Doc *d = doc_new();
     put(d, root(d), "model", copy(d, get(quote, "model")));
     put(d, root(d), "store", jb(d, false));
-    put(d, root(d), "instructions", js(d, prompt));
+    char *instructions = fmt(
+        "%s\n\nThe final answer must be exactly one JSON object matching the supplied schema. "
+        "Do not wrap it in Markdown fences or add prose outside the JSON. Keep the result concise "
+        "and within the output token limit. Use empty arrays when there are no items.\n%s",
+        prompt, tools_enabled ? "" : "No tools are available. Return the structured final answer "
+                                         "now using the evidence already supplied; state any gaps.");
+    put(d, root(d), "instructions", js(d, instructions));
+    free(instructions);
     put(d, root(d), "input", copy(d, input));
     put(d, root(d), "max_output_tokens", ji(d, (int64_t)cfg->chat.output_limit));
     J *reason = obj(d);
@@ -411,7 +479,9 @@ Doc *estimate_build(App *a, Snapshot *snap, Doc *selection, char **error) {
                                       content ? content : "");
     free(content);
     put(d, r, "mode", js(d, full ? "full" : "agentic"));
-    put(d, r, "max_calls", ji(d, full ? 1 : REVIEW_CALLS));
+    int max_calls = (full ? 1 : REVIEW_CALLS) + RESULT_ATTEMPTS - 1;
+    put(d, r, "max_calls", ji(d, max_calls));
+    put(d, r, "max_result_attempts", ji(d, RESULT_ATTEMPTS));
     J *entries = arr(d), *entry = obj(d), *cov = obj(d);
     add(entries, entry);
     put(d, r, "entries", entries);
@@ -510,16 +580,18 @@ Doc *estimate_build(App *a, Snapshot *snap, Doc *selection, char **error) {
     put(d, r, "tokens_estimated", ji(d, (int64_t)tokens));
     double estimate = tokens * model.input_rate / 1000000.0 + detection_cost;
     double maximum =
-        ((full ? tokens : budget) * model.input_rate + model.output_limit * model.output_rate) /
-            1000000.0 * (full ? 1 : REVIEW_CALLS) +
+        (budget * model.input_rate + model.output_limit * model.output_rate) /
+            1000000.0 * max_calls +
         detection_cost;
     put(d, r, "estimated_usd", model.pricing_known ? jnum(d, estimate) : js(d, NULL));
     put(d, r, "maximum_usd", model.pricing_known ? jnum(d, maximum) : js(d, NULL));
     put(d, r, "estimate_note",
-        js(d, full ? "One structured analysis call. Output tokens are additional; maximum includes "
-                     "the output reserve."
-                   : "Read-only investigation, up to 8 model calls. The upper bound reserves a "
-                     "full context and output budget per call."));
+        js(d, full ? "Normally one structured analysis call. Only invalid JSON/schema results "
+                     "allow up to two repair calls (three result attempts total). The maximum "
+                     "reserves context and output for all three calls."
+                   : "Read-only investigation, up to 8 model calls, plus at most two repair calls "
+                     "only for invalid JSON/schema results (three result attempts total). The "
+                     "maximum reserves full context and output per call."));
     char *now = now_iso();
     put(d, r, "created_at", js(d, now));
     free(now);
@@ -616,9 +688,11 @@ static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, ReviewKind 
     J *hv;
     yyjson_mut_arr_foreach(extra_history, hi, hn, hv) add(root(history), copy(history, hv));
     bool agentic = chat || !strcmp(sget(quote, "mode"), "agentic"), force_final = false;
-    int max_calls = agentic ? REVIEW_CALLS : 1;
+    int normal_calls = agentic ? REVIEW_CALLS : 1;
+    int attempts = 0, max_attempts = chat ? 1 : RESULT_ATTEMPTS;
+    int max_calls = normal_calls + max_attempts - 1;
     for (int round = 0; round < max_calls; round++) {
-        bool allow_tools = agentic && !force_final && round < max_calls - 1;
+        bool allow_tools = agentic && !force_final && round < normal_calls - 1;
         const char *endpoint = NULL;
         Doc *wire = request_wire(&cfg, quote, root(history), prompt,
                                  (allow_tools) ? TOOLS_ENABLED : TOOLS_DISABLED,
@@ -651,19 +725,57 @@ static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, ReviewKind 
         }
         totals_add(d, usage, get(root(response), "usage"));
         transport_free(&t);
+        const char *failure = response_failure(root(response));
+        if (failure) {
+            put(d, r, "error", js(d, failure));
+            doc_free(response);
+            break;
+        }
         bool calls = false;
         size_t i, n;
         J *v;
         yyjson_mut_arr_foreach(get(root(response), "output"), i, n,
                                v) if (!strcmp(sget(v, "type"), "function_call")) calls = true;
         if (!calls) {
+            attempts++;
             char *text = response_text(root(response));
-            Doc *result = doc_parse(text, strlen(text));
+            char *validation_error = NULL;
+            Doc *result = doc_parse_error(text, strlen(text), &validation_error);
             free(text);
-            if (!result_valid(root(result), (chat) ? REVIEW_CHAT : REVIEW_ANALYSIS)) {
-                put(d, r, "error",
-                    js(d, "The provider did not return the required structured result (or "
-                          "refused). No automatic retry was made."));
+            if (result) {
+                validation_error = chat
+                    ? (yyjson_mut_is_str(get(root(result), "answer")) &&
+                               *sget(root(result), "answer")
+                           ? NULL
+                           : xstrdup("JSON validation error at $.answer: expected a nonempty string"))
+                    : result_error(root(result), get(quote, "schema"), "$");
+            }
+            put(d, r, "result_attempts", ji(d, attempts));
+            if (validation_error) {
+                put(d, audit, "result_error", js(d, validation_error));
+                if (attempts < max_attempts) {
+                    /* Repair only a completed but malformed result. Keep provider state/phase. */
+                    yyjson_mut_arr_foreach(get(root(response), "output"), i, n, v)
+                        add(root(history), copy(history, v));
+                    char *feedback = fmt(
+                        "Your previous final answer failed local JSON parsing/schema validation.\n"
+                        "%s\nReturn a corrected complete JSON object matching the supplied schema. "
+                        "Fix the reported error; do not repeat the invalid output. No Markdown, "
+                        "preamble or tool calls. Keep the answer concise and within the output limit.",
+                        validation_error);
+                    msg(history, root(history), "user", feedback);
+                    free(feedback);
+                    free(validation_error);
+                    doc_free(result);
+                    doc_free(response);
+                    force_final = true;
+                    continue;
+                }
+                char *message = fmt("Structured result failed after %d attempt%s: %s", attempts,
+                                    attempts == 1 ? "" : "s", validation_error);
+                put(d, r, "error", js(d, message));
+                free(message);
+                free(validation_error);
             } else {
                 put(d, r, "result", copy(d, root(result)));
                 if (!chat) {

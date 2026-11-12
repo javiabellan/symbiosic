@@ -235,7 +235,9 @@ After completion, calculate cost from reported usage and the quote's price. With
 
 Quotes are single-use and expire after ten minutes if not started. Cached entries can become outdated while the preview is open; disclose this and offer Refresh estimate. Before dispatch, reuse any matching result completed since the quote was made. Do not add a force-reanalyze button in the PoC.
 
-Do not automatically retry paid requests after timeouts or ambiguous failures: the provider may have processed them. Mark outcome unknown and let the user explicitly retry after reviewing another estimate. Local caching cannot guarantee exactly-once billing across a crash.
+Parse structured results only from the final assistant answer; commentary messages are separate and must never be concatenated into its JSON. Request strict schema output on the first call. Only completed responses with JSON parsing or schema validation errors may receive up to two repair calls (three result attempts total). Each repair includes the previous failed output and its exact parsing/validation error. Disable tools during repair, preserve provider-native state and message phases, and count every call in usage and the quoted maximum. Read-only retrieval rounds are separate from result attempts.
+
+Do not automatically retry paid requests after timeouts, ambiguous failures, HTTP errors, refusals or incomplete responses: the provider may have processed them. Mark ambiguous outcomes unknown and let the user explicitly retry after reviewing another estimate. Local caching cannot guarantee exactly-once billing across a crash.
 
 # System 2 chat and tools
 
@@ -309,7 +311,7 @@ This PoC trusts one local user and has no account system or remote access. Still
 
 Use fixed routes and validated opaque IDs; never serve DATA_DIR, .env, or arbitrary paths. Keep data directories private and create sensitive files with owner-only permissions. Never log the API key. Inform the user in the UI that analysis and chat send selected content to the configured AI provider; no automated secret redaction is implemented.
 
-libcurl verifies TLS, has a ten-second connect timeout and 120-second overall timeout, and caps received bodies at 8 MiB. Do not follow redirects with credentials. Return useful provider error messages without request contents or secrets. No automatic retries of paid calls.
+libcurl verifies TLS, has a ten-second connect timeout and 120-second overall timeout, and caps received bodies at 8 MiB. Do not follow redirects with credentials. Return useful provider error messages without request contents or secrets. Only completed analysis results that fail JSON/schema validation may use the bounded repair calls described above.
 
 Handle allocation failure, invalid JSON, disk write failure, source deletion, and unknown native records visibly. If persistence of a received paid result fails, keep it in memory for the process lifetime and show “Result not saved”; do not call the model again as recovery.
 

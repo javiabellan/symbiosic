@@ -124,6 +124,7 @@ void buf_free(Buf *b);
 size_t utf8_end(const char *s, size_t n, size_t end);
 Doc *doc_new(void);
 Doc *doc_parse(const char *s, size_t n);
+Doc *doc_parse_error(const char *s, size_t n, char **error);
 Doc *doc_clone(Doc *d);
 J *root(Doc *d);
 J *get(J *o, const char *k);

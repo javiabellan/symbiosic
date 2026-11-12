@@ -212,6 +212,11 @@ Doc *provider_request(Config *c, ModelRole decision, J *request, const char **en
             put(d, rf, "type", js(d, "json_schema"));
             put(d, rf, "json_schema", f);
             put(d, r, "response_format", rf);
+            if (model->provider == AI_OPENROUTER) {
+                J *routing = obj(d);
+                put(d, routing, "require_parameters", jb(d, true));
+                put(d, r, "provider", routing);
+            }
         }
     }
     const char *effort = sget(get(request, "reasoning"), "effort");
@@ -281,6 +286,11 @@ Doc *provider_response(Provider p, ModelRole decision, const char *endpoint, J *
     size_t i, n;
     J *v;
     if (p == AI_ANTHROPIC) {
+        if (!strcmp(sget(response, "stop_reason"), "refusal")) {
+            put(d, root(d), "refused", jb(d, true));
+        } else if (!strcmp(sget(response, "stop_reason"), "max_tokens")) {
+            put(d, root(d), "status", js(d, "incomplete"));
+        }
         yyjson_mut_arr_foreach(get(response, "content"), i, n, v) {
             if (!strcmp(sget(v, "type"), "text")) {
                 buf_add(&text, sget(v, "text"));
@@ -297,8 +307,16 @@ Doc *provider_response(Provider p, ModelRole decision, const char *endpoint, J *
             }
         }
     } else {
-        J *m = get(yyjson_mut_arr_get(get(response, "choices"), 0), "message");
-        buf_add(&text, sget(m, "content"));
+        J *choice = yyjson_mut_arr_get(get(response, "choices"), 0);
+        J *m = get(choice, "message");
+        if (*sget(m, "refusal") || !strcmp(sget(choice, "finish_reason"), "content_filter")) {
+            put(d, root(d), "refused", jb(d, true));
+        } else if (!strcmp(sget(choice, "finish_reason"), "length")) {
+            put(d, root(d), "status", js(d, "incomplete"));
+        }
+        char *content = content_text(get(m, "content"));
+        buf_add(&text, content);
+        free(content);
         yyjson_mut_arr_foreach(get(m, "tool_calls"), i, n, v) {
             J *call = obj(d), *fn = get(v, "function");
             put(d, call, "type", js(d, "function_call"));

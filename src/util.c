@@ -113,8 +113,15 @@ Doc *doc_new(void) {
     return d;
 }
 Doc *doc_parse(const char *s, size_t n) {
-    yyjson_doc *r = yyjson_read_opts((char *)s, n, 0, &allocator, NULL);
+    return doc_parse_error(s, n, NULL);
+}
+Doc *doc_parse_error(const char *s, size_t n, char **error) {
+    yyjson_read_err e = {0};
+    yyjson_doc *r = yyjson_read_opts((char *)s, n, 0, &allocator, &e);
     if (!r) {
+        if (error) {
+            *error = fmt("JSON parsing error at byte %zu: %s", e.pos, e.msg);
+        }
         return NULL;
     }
     Doc *d = yyjson_doc_mut_copy(r, &allocator);

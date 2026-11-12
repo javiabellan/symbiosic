@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(symbiosic VERSION 0.1.1 LANGUAGES C)
+project(symbiosic VERSION 0.1.2 LANGUAGES C)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 if(CYGWIN OR MSYS)
