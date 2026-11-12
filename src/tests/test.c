@@ -78,7 +78,7 @@ static Transport fake(const char *endpoint, const char *body, const char *key) {
     if (mode == 2) {
         doc_free(request);
         doc_free(response);
-        return (Transport){.status = 200, .body = xstrdup("not json")};
+        return (Transport){.status = STATUS_OK, .body = xstrdup("not json")};
     }
     if (!strcmp(sget(get(get(root(request), "text"), "format"), "name"), "symbiosic_analysis")) {
         const char *result =
@@ -106,7 +106,7 @@ static Transport fake(const char *endpoint, const char *body, const char *key) {
         char *out = json(r);
         doc_free(request);
         doc_free(response);
-        return (Transport){.status = 200, .body = out};
+        return (Transport){.status = STATUS_OK, .body = out};
     }
     {
         CHECK(!strcmp(endpoint, "responses"));
@@ -170,7 +170,7 @@ static Transport fake(const char *endpoint, const char *body, const char *key) {
     char *serialized = json(r);
     doc_free(response);
     doc_free(request);
-    return (Transport){.status = 200, .body = serialized};
+    return (Transport){.status = STATUS_OK, .body = serialized};
 }
 static void test_normalizers(App *a, const char *cp, const char *xp) {
     Trace *c = norm(cp, "claude", NULL), *x = norm(xp, "codex", NULL);
@@ -437,7 +437,7 @@ static Transport catalog_fake(const char *endpoint, const char *body, const char
             "{\"data\":[{\"id\":\"gpt-6-luna\"},{\"id\":\"unknown-limits\"},{\"id\":\"routed-"
             "model\",\"context_length\":1000000,\"top_provider\":{\"context_length\":200000}}]}";
     }
-    return (Transport){.status = 200, .body = xstrdup(json_text)};
+    return (Transport){.status = STATUS_OK, .body = xstrdup(json_text)};
 }
 static void test_catalog(App *a) {
     TestTransport saved = test_transport;
@@ -465,7 +465,7 @@ static void test_providers(App *a) {
     for (int p = AI_ANTHROPIC; p < AI_PROVIDERS; p++) {
         a->cfg.chat.provider = (Provider)p;
         const char *endpoint = NULL;
-        Doc *wire = provider_request(&a->cfg, false, root(req), &endpoint);
+        Doc *wire = provider_request(&a->cfg, MODEL_GENERATION, root(req), &endpoint);
         CHECK(!strcmp(endpoint, p == AI_ANTHROPIC ? "messages" : "chat/completions"));
         char *body = json(root(wire));
         CHECK(strstr(body, "get_stats") && strstr(body, "evidence"));
@@ -479,7 +479,7 @@ static void test_providers(App *a) {
                       : "{\"choices\":[{\"message\":{\"content\":\"answer\",\"tool_calls\":[{"
                         "\"id\":\"c2\",\"function\":{\"name\":\"read_events\",\"arguments\":\"{}\"}"
                         "}]}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}");
-        Doc *response = provider_response((Provider)p, false, endpoint, root(raw));
+        Doc *response = provider_response((Provider)p, MODEL_GENERATION, endpoint, root(raw));
         CHECK(yyjson_mut_arr_size(get(root(response), "output")) == 2);
         CHECK(integer(get(get(root(response), "usage"), "input_tokens")) == 10);
         doc_free(response);
@@ -491,16 +491,16 @@ static void test_providers(App *a) {
     Doc *settings = ai_settings(a), *saved_settings = doc_clone(settings);
     CHECK(!strstr(sget(root(settings), "key"), "test-only"));
     put(settings, get(root(settings), "chat"), "context_limit", ji(settings, 1));
-    Doc *result = ai_settings_update(a, root(settings), false, &status);
-    CHECK(status == 400);
+    Doc *result = ai_settings_update(a, root(settings), SETTINGS_DEFAULTS, &status);
+    CHECK(status == STATUS_BAD_REQUEST);
     doc_free(result);
     a->ai_busy = true;
-    result = ai_settings_update(a, root(saved_settings), false, &status);
-    CHECK(status == 409);
+    result = ai_settings_update(a, root(saved_settings), SETTINGS_DEFAULTS, &status);
+    CHECK(status == STATUS_CONFLICT);
     doc_free(result);
     a->ai_busy = false;
-    result = ai_settings_update(a, root(saved_settings), false, &status);
-    CHECK(status == 200);
+    result = ai_settings_update(a, root(saved_settings), SETTINGS_DEFAULTS, &status);
+    CHECK(status == STATUS_OK);
     doc_free(result);
     CHECK(ai_settings_load(a, NULL));
     doc_free(saved_settings);
@@ -510,7 +510,7 @@ static void test_chat_restart(App *a) {
     Doc *scope = parse("{\"type\":\"directory\",\"cwd\":\"/work/app\"}");
     int status;
     Doc *ack = create_chat(a, root(scope), &status);
-    CHECK(status == 200);
+    CHECK(status == STATUS_OK);
     char *id = xstrdup(sget(root(ack), "chat_id"));
     doc_free(ack);
     Doc *chat = docs_find(&a->chats, "id", id);
@@ -583,7 +583,7 @@ static Transport budget_fake(const char *endpoint, const char *body, const char 
     free(sent_body);
     sent_body = xstrdup(body);
     return (Transport){
-        .status = 200,
+        .status = STATUS_OK,
         .body = xstrdup("{\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{"
                         "\"type\":\"output_text\",\"text\":\"Direct answer, zero tools.\"}]}]}")};
 }
@@ -607,7 +607,7 @@ static void test_chat_budget(App *a) {
     Doc *scope = parse("{\"type\":\"all\"}");
     int status;
     Doc *ack = create_chat(a, root(scope), &status);
-    CHECK(status == 200);
+    CHECK(status == STATUS_OK);
     Doc *chat = docs_find(&a->chats, "id", sget(root(ack), "chat_id"));
     char *error = NULL;
     TestTransport saved_transport = test_transport;
@@ -668,7 +668,7 @@ static void test_concurrency(App *a, const char *cp) {
     int status, before = calls;
     mode = 4;
     Doc *ack = start_analysis(a, sget(root(quote), "id"), &status);
-    CHECK(status == 202);
+    CHECK(status == STATUS_ACCEPTED);
     uv_run(&a->loop, UV_RUN_DEFAULT);
     CHECK(concurrent.both && concurrent.ticks == 20);
     CHECK(calls == before + 1);

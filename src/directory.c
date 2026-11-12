@@ -7,6 +7,8 @@
 #include <string.h>
 #include <unistd.h>
 
+typedef enum { PATH_FILE, PATH_DIRECTORY } PathKind;
+
 bool directory_allowed(App *a, const char *cwd) {
     if (!cwd || cwd[0] != '/') {
         return false;
@@ -18,7 +20,7 @@ bool directory_allowed(App *a, const char *cwd) {
     }
     return false;
 }
-static int open_relative(const char *cwd, const char *path, bool directory) {
+static int open_relative(const char *cwd, const char *path, PathKind directory) {
     if (*path == '/' || strlen(path) > 4096) {
         errno = EINVAL;
         return -1;
@@ -219,7 +221,7 @@ Doc *directory_manifest(App *a, const char *cwd, char **error) {
         *error = xstrdup("Select a directory associated with an imported session");
         return NULL;
     }
-    int fd = open_relative(cwd, "", true);
+    int fd = open_relative(cwd, "", PATH_DIRECTORY);
     if (fd < 0) {
         *error = fmt("Directory is unavailable: %s", strerror(errno));
         return NULL;
@@ -242,7 +244,7 @@ Doc *directory_read(const char *cwd, const char *path, size_t offset, size_t lim
     if (!*path || limit < 1 || limit > 32768 || offset > (size_t)INT64_MAX) {
         return error_doc("bad_path", "Invalid file path or byte range");
     }
-    int fd = open_relative(cwd, path, false);
+    int fd = open_relative(cwd, path, PATH_FILE);
     struct stat st;
     if (fd < 0) {
         return error_doc(
@@ -315,7 +317,7 @@ Doc *directory_page(App *a, const char *cwd, const char *path, size_t offset, ch
         *error = xstrdup("Unknown directory");
         return NULL;
     }
-    int fd = open_relative(cwd, path, true);
+    int fd = open_relative(cwd, path, PATH_DIRECTORY);
     if (fd < 0) {
         *error = xstrdup("Directory is unavailable; links and parent traversal are not followed");
         return NULL;

@@ -76,7 +76,7 @@ static void send_bytes(Conn *c, int status, const char *type, const char *body) 
                          : status == STATUS_MEDIA_TYPE  ? "Unsupported Media Type"
                          : status == STATUS_BAD_GATEWAY ? "Bad Gateway"
                          : status == STATUS_UNAVAILABLE ? "Service Unavailable"
-                                                      : "Internal Server Error";
+                                                        : "Internal Server Error";
     c->response =
         fmt("HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: "
             "close\r\nCache-Control: no-store\r\nX-Content-Type-Options: "
@@ -224,7 +224,7 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         reject(c, c->failure ? c->failure : STATUS_BAD_REQUEST,
                c->failure == STATUS_TOO_LARGE ? "too_large" : "bad_http",
                c->failure == STATUS_TOO_LARGE ? "Headers exceed 8 KiB or API body exceeds 16 KiB"
-                                            : "Malformed HTTP request");
+                                              : "Malformed HTTP request");
         return;
     }
     if (!c->complete) {
@@ -476,7 +476,9 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
     } else if (get_method && !strcmp(path, "/api/settings")) {
         out = ai_settings(a);
     } else if (post && (!strcmp(path, "/api/settings") || !strcmp(path, "/api/provider"))) {
-        out = ai_settings_update(a, in, !strcmp(path, "/api/provider"), &status);
+        out = ai_settings_update(
+            a, in, (!strcmp(path, "/api/provider")) ? SETTINGS_CONNECTION : SETTINGS_DEFAULTS,
+            &status);
     } else if (get_method && !strcmp(path, "/api/models")) {
         Provider provider;
         if (!provider_parse(sget(q, "provider"), &provider)) {

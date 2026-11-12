@@ -51,7 +51,7 @@ static char *content_text(J *content) {
     }
     return b.s ? b.s : xstrdup("");
 }
-Doc *provider_request(Config *c, bool decision, J *request, const char **endpoint) {
+Doc *provider_request(Config *c, ModelRole decision, J *request, const char **endpoint) {
     ModelConfig *model = decision ? &c->decision : &c->chat;
     const char *id = sget(request, "model");
     if (model->provider == AI_OPENAI) {
@@ -231,7 +231,7 @@ Doc *provider_request(Config *c, bool decision, J *request, const char **endpoin
     }
     return d;
 }
-Doc *provider_response(Provider p, bool decision, const char *endpoint, J *response) {
+Doc *provider_response(Provider p, ModelRole decision, const char *endpoint, J *response) {
     if (!response) {
         return NULL;
     }
@@ -482,7 +482,7 @@ static bool apply_settings(Config *c, J *in) {
     c->rate = rate;
     return true;
 }
-Doc *ai_settings_update(App *a, J *in, bool connection, int *status) {
+Doc *ai_settings_update(App *a, J *in, SettingsKind connection, int *status) {
     if (a->ai_busy || a->head) {
         *status = STATUS_CONFLICT;
         return error_doc("ai_busy", "Wait for queued AI work to finish before changing settings");

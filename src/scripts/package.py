@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
-import platform
 import plistlib
 import re
 import shutil
@@ -175,6 +174,7 @@ def windows(stage, out, target, binary):
     root = stage/'Symbiosic'
     copy_assets(root,binary)
     shutil.copy2(SRC/'.deps/tiktoken_c.dll',root/'bin/tiktoken_c.dll')
+    shutil.copy2('/etc/ssl/certs/ca-bundle.crt', root/'assets/cacert.pem')
     pending = [root/'bin'/binary.name,root/'bin/tiktoken_c.dll']
     copied = set()
     while pending:

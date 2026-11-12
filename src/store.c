@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <dirent.h>
 
+typedef enum { DOCS_FLAT, DOCS_NESTED } DocLayout;
+
 static void syserror(char **e, const char *what) {
     if (e && !*e) {
         *e = fmt("%s: %s", what, strerror(errno));
@@ -297,7 +299,7 @@ static bool suffix(const char *s, const char *end) {
     size_t n = strlen(s), m = strlen(end);
     return n >= m && !strcmp(s + n - m, end);
 }
-static void load_docs(App *a, const char *dir, Docs *out, bool nested) {
+static void load_docs(App *a, const char *dir, Docs *out, DocLayout nested) {
     char *path = fmt("%s/%s", a->cfg.data_dir, dir);
     DIR *d = opendir(path);
     if (!d) {
@@ -317,7 +319,7 @@ static void load_docs(App *a, const char *dir, Docs *out, bool nested) {
         }
         if (nested && S_ISDIR(st.st_mode)) {
             char *sub = fmt("%s/%s", dir, e->d_name);
-            load_docs(a, sub, out, false);
+            load_docs(a, sub, out, DOCS_FLAT);
             free(sub);
         } else if (S_ISREG(st.st_mode) && suffix(e->d_name, ".json")) {
             char *err = NULL;
@@ -388,10 +390,10 @@ bool store_open(App *a, char **error) {
         closedir(dir);
     }
     free(p);
-    load_docs(a, "analysis", &a->analyses, true);
-    load_docs(a, "quotes", &a->quotes, false);
-    load_docs(a, "jobs", &a->jobs, false);
-    load_docs(a, "chats", &a->chats, false);
+    load_docs(a, "analysis", &a->analyses, DOCS_NESTED);
+    load_docs(a, "quotes", &a->quotes, DOCS_FLAT);
+    load_docs(a, "jobs", &a->jobs, DOCS_FLAT);
+    load_docs(a, "chats", &a->chats, DOCS_FLAT);
     for (size_t i = 0; i < a->jobs.n; i++) {
         Doc *j = a->jobs.v[i];
         const char *state = sget(root(j), "state");
@@ -630,7 +632,7 @@ static void apply_titles(App *a, Traces *traces) {
     for (size_t i = 0; i < traces->n; i++) {
         Trace *t = traces->v[i];
         J *meta = get(root(t->doc), "meta");
-        if (boolean(get(meta, "subagent")) || !strcmp(sget(meta, "title_kind"), "custom")) {
+        if (boolean(get(meta, "subagent")) || !strcmp(sget(meta, "title_kind"), TITLE_CUSTOM)) {
             continue;
         }
 

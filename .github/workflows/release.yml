@@ -41,7 +41,7 @@ jobs:
         with:
           msystem: MSYS
           update: true
-          install: gcc make cmake pkgconf libcurl-devel libuv-devel python unzip binutils mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
+          install: gcc make cmake pkgconf libcurl-devel libzstd-devel libuv-devel python unzip binutils mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
       - name: Unix build and tests
         if: runner.os != 'Windows'
         working-directory: src
@@ -53,6 +53,11 @@ jobs:
           cp build/symbiosic symbiosic
           python3 tests/http_test.py
           python3 scripts/package.py '${{ matrix.target }}'
+          if [[ '${{ runner.os }}' == 'macOS' ]]; then
+            python3 tests/package_test.py dist/symbiosic-${{ matrix.target }}.dmg
+          else
+            python3 tests/package_test.py dist/symbiosic-${{ matrix.target }}.tar.gz
+          fi
       - name: Windows build and tests
         if: runner.os == 'Windows'
         shell: msys2 {0}
@@ -66,6 +71,7 @@ jobs:
           cp build/symbiosic.exe symbiosic.exe
           python tests/http_test.py
           python scripts/package.py windows-x86_64
+          python tests/package_test.py dist/symbiosic-windows-x86_64.zip
       - uses: actions/setup-node@v4
         if: runner.os == 'Linux'
         with:

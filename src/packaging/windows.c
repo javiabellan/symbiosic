@@ -4,9 +4,10 @@
 #include <shellapi.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wchar.h>
 
-enum { PATH_CAP = 32768, URL_CAP = 128, START_DELAY_MS = 1500 };
+enum { PATH_CAP = 32768, URL_CAP = 128 };
 static void set_path(const wchar_t *name, const wchar_t *value) {
     wchar_t path[PATH_CAP];
     if (!value || wcslen(value) + 2 >= PATH_CAP) {
@@ -41,23 +42,55 @@ int wmain(void) {
         return 1;
     }
     set_path(L"HOME", _wgetenv(L"USERPROFILE"));
+    const wchar_t *local = _wgetenv(L"LOCALAPPDATA");
+    if (!local) {
+        return 1;
+    }
     if (!_wgetenv(L"DATA_DIR")) {
-        swprintf(data, PATH_CAP, L"%ls\\Symbiosic", _wgetenv(L"LOCALAPPDATA"));
+        swprintf(data, PATH_CAP, L"%ls\\Symbiosic", local);
         set_path(L"DATA_DIR", data);
     }
-    STARTUPINFOW startup = {.cb = sizeof(startup)};
+    if (!_wgetenv(L"SSL_CERT_FILE")) {
+        swprintf(data, PATH_CAP, L"%ls\\assets\\cacert.pem", root);
+        set_path(L"SSL_CERT_FILE", data);
+    }
+
+    // Read the server's startup URL so browser launch follows successful initialization.
+    SECURITY_ATTRIBUTES security = {.nLength = sizeof(security), .bInheritHandle = TRUE};
+    HANDLE reader, writer;
+    if (!CreatePipe(&reader, &writer, &security, 0)) {
+        return 1;
+    }
+    SetHandleInformation(reader, HANDLE_FLAG_INHERIT, 0);
+    STARTUPINFOW startup = {.cb = sizeof(startup),
+                            .dwFlags = STARTF_USESTDHANDLES,
+                            .hStdInput = GetStdHandle(STD_INPUT_HANDLE),
+                            .hStdOutput = writer,
+                            .hStdError = GetStdHandle(STD_ERROR_HANDLE)};
     PROCESS_INFORMATION process = {0};
     wchar_t command[] = L"bin\\symbiosic.exe";
     if (!CreateProcessW(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &startup, &process)) {
         fwprintf(stderr, L"Cannot start Symbiosic (%lu).\n", GetLastError());
+        CloseHandle(reader);
+        CloseHandle(writer);
         return 1;
     }
-    // The server prints its URL; the console also provides an explicit shutdown action.
-    const wchar_t *port = _wgetenv(L"PORT");
-    wchar_t url[URL_CAP];
-    swprintf(url, URL_CAP, L"http://127.0.0.1:%ls", port ? port : L"4317");
-    Sleep(START_DELAY_MS);
-    if (WaitForSingleObject(process.hProcess, 0) == WAIT_TIMEOUT) {
+    CloseHandle(writer);
+    char line[URL_CAP] = {0};
+    DWORD count;
+    for (size_t i = 0; i < URL_CAP - 1; i++) {
+        if (!ReadFile(reader, &line[i], 1, &count, NULL) || !count || line[i] == '\n') {
+            break;
+        }
+    }
+    CloseHandle(reader);
+    if (strncmp(line, "http://127.0.0.1:", sizeof("http://127.0.0.1:") - 1) == 0) {
+        wchar_t url[URL_CAP];
+        MultiByteToWideChar(CP_UTF8, 0, line, -1, url, URL_CAP);
+        wchar_t *newline = wcschr(url, L'\n');
+        if (newline) {
+            *newline = 0;
+        }
         ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
         wprintf(L"Close this window to stop Symbiosic.\n");
     }

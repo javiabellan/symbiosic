@@ -54,6 +54,11 @@ Transport provider_http(Config *cfg, Provider provider, const char *endpoint, co
     Buf b = {0};
     curl_easy_setopt(c, CURLOPT_URL, url);
     curl_easy_setopt(c, CURLOPT_HTTPHEADER, headers);
+    /* Portable Windows packages carry a CA bundle beside their resources. */
+    const char *certs = getenv("SSL_CERT_FILE");
+    if (certs && *certs) {
+        curl_easy_setopt(c, CURLOPT_CAINFO, certs);
+    }
     if (body) {
         curl_easy_setopt(c, CURLOPT_POSTFIELDS, body);
         curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)strlen(body));
@@ -75,8 +80,8 @@ Transport provider_http(Config *cfg, Provider provider, const char *endpoint, co
         t.error = fmt("Provider transport failed (%s); outcome unknown. No automatic retry.",
                       curl_easy_strerror(code));
         t.ambiguous = true;
-    } else if (status < STATUS_OK || status >= STATUS_REDIRECT) { /* Do not echo provider text: it may
-                                                                 quote input or credentials. */
+    } else if (status < STATUS_OK || status >= STATUS_REDIRECT) { /* Do not echo provider text: it
+                                                                 may quote input or credentials. */
         t.error = fmt("Provider HTTP %ld; check model availability, key permissions, quota and "
                       "request settings. No retry was made.",
                       status);

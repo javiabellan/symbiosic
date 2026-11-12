@@ -22,7 +22,7 @@ static void test_provider_replay(App *a) {
                                : p == AI_ANTHROPIC ? "messages"
                                                    : "chat/completions";
         Doc *raw = parse(fixtures[p]);
-        Doc *response = provider_response((Provider)p, false, endpoint, root(raw));
+        Doc *response = provider_response((Provider)p, MODEL_GENERATION, endpoint, root(raw));
         Doc *request =
             parse("{\"model\":\"fixture\",\"instructions\":\"Review\",\"input\":[],\"tools\":[]}");
         J *input = get(root(request), "input");
@@ -39,7 +39,7 @@ static void test_provider_replay(App *a) {
             put(request, result, "output", js(request, "evidence"));
             add(input, result);
         }
-        Doc *wire = provider_request(&a->cfg, false, root(request), &endpoint);
+        Doc *wire = provider_request(&a->cfg, MODEL_GENERATION, root(request), &endpoint);
         J *messages = get(root(wire), p == AI_OPENAI ? "input" : "messages");
         J *native = yyjson_mut_arr_get(messages, p == AI_OPENAI ? 0 : p == AI_ANTHROPIC ? 0 : 1);
         J *expected = p == AI_OPENAI ? yyjson_mut_arr_get(get(root(raw), "output"), 0)

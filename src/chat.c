@@ -2,7 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void message_add(Doc *d, J *messages, const char *role, const char *text, bool completed) {
+typedef enum { CHAT_PENDING, CHAT_COMPLETE } ChatStatus;
+
+static void message_add(Doc *d, J *messages, const char *role, const char *text,
+                        ChatStatus completed) {
     J *m = obj(d);
     put(d, m, "role", js(d, role));
     put(d, m, "text", js(d, text));
@@ -57,7 +60,7 @@ static Doc *budget_request(App *a, Snapshot *s, Doc *request, Doc **coverage, co
     put(request, evidence, "role", js(request, "user"));
     put(request, evidence, "content", js(request, ""));
     yyjson_mut_arr_prepend(input, evidence);
-    Doc *wire = provider_request(&a->cfg, false, root(request), endpoint);
+    Doc *wire = provider_request(&a->cfg, MODEL_GENERATION, root(request), endpoint);
     size_t overhead = token_json(root(wire));
     doc_free(wire);
     size_t totals[6] = {0}, budget = model_budget(&a->cfg.chat);
@@ -102,7 +105,7 @@ static Doc *budget_request(App *a, Snapshot *s, Doc *request, Doc **coverage, co
     put(request, evidence, "content",
         js(request, content.s ? content.s : "No traces in this scope."));
     buf_free(&content);
-    wire = provider_request(&a->cfg, false, root(request), endpoint);
+    wire = provider_request(&a->cfg, MODEL_GENERATION, root(request), endpoint);
     *coverage = cov;
     return wire;
 }
@@ -119,7 +122,7 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
     J *last = yyjson_mut_arr_get_last(messages);
     if (!last || strcmp(sget(last, "role"), "user") || strcmp(sget(last, "text"), text) ||
         boolean(get(last, "completed"))) {
-        message_add(chat, messages, "user", text, false);
+        message_add(chat, messages, "user", text, CHAT_PENDING);
     }
     J *refs = arr(chat);
     for (size_t i = 0; i < s->traces.n; i++) {
@@ -205,7 +208,8 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
         free(body);
         doc_free(req);
         Doc *raw = transport.body ? doc_parse(transport.body, strlen(transport.body)) : NULL;
-        Doc *response = provider_response(a->cfg.chat.provider, false, endpoint, root(raw));
+        Doc *response =
+            provider_response(a->cfg.chat.provider, MODEL_GENERATION, endpoint, root(raw));
         doc_free(raw);
         Doc *receipt = doc_new();
         put(receipt, root(receipt), "http_status", ji(receipt, transport.status));
@@ -323,7 +327,7 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
     if (last) {
         put(chat, last, "completed", jb(chat, true));
     }
-    message_add(chat, messages, "assistant", answer, true);
+    message_add(chat, messages, "assistant", answer, CHAT_COMPLETE);
     put(chat, root(chat), "last_answer", js(chat, answer));
     put(chat, root(chat), "tool_result_bytes", ji(chat, (int64_t)tool_bytes));
     char *now = now_iso();

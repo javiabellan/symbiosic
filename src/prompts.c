@@ -4,6 +4,8 @@
 #include <string.h>
 #include <unistd.h>
 
+typedef enum { PROMPTS_REQUIRED, PROMPTS_OPTIONAL } PromptMode;
+
 static bool prompt_id(const char *s) {
     if (!*s || strlen(s) > 64) {
         return false;
@@ -22,7 +24,7 @@ static const char *body_start(const char *s) {
     const char *end = strstr(s + 4, "\n---\n");
     return end ? end + 5 : NULL;
 }
-static bool load_domains(App *a, const char *path, bool optional, char **error) {
+static bool load_domains(App *a, const char *path, PromptMode optional, char **error) {
     DIR *dir = opendir(path);
     if (!dir) {
         if (optional) {
@@ -89,11 +91,11 @@ bool prompts_load(App *a, char **error) {
         put(a->prompts, root(a->prompts), names[i], js(a->prompts, body));
         free(text);
     }
-    if (!load_domains(a, "prompts/domains", false, error)) {
+    if (!load_domains(a, "prompts/domains", PROMPTS_REQUIRED, error)) {
         return false;
     }
     char *path = fmt("%s/prompts/domains", a->cfg.data_dir);
-    bool ok = load_domains(a, path, true, error);
+    bool ok = load_domains(a, path, PROMPTS_OPTIONAL, error);
     free(path);
     return ok;
 }

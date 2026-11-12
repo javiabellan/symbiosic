@@ -14,6 +14,7 @@
 #define MAX_FILE_BYTES (SIZE_MAX - 1)
 #define MAX_SCHEMA_BYTES (128u * 1024)
 #define MAX_TOOL (16u * 1024)
+#define TITLE_CUSTOM "custom"
 #define PRICE_DATE "2026-11-08"
 typedef enum {
     STATUS_OK = 200,
@@ -30,6 +31,9 @@ typedef enum {
     STATUS_BAD_GATEWAY = 502,
     STATUS_UNAVAILABLE = 503
 } HttpStatus;
+
+typedef enum { MODEL_GENERATION, MODEL_DECISION } ModelRole;
+typedef enum { SETTINGS_DEFAULTS, SETTINGS_CONNECTION } SettingsKind;
 
 typedef enum { AI_OPENAI, AI_ANTHROPIC, AI_OPENROUTER, AI_GEMINI, AI_PROVIDERS } Provider;
 typedef struct {
@@ -185,11 +189,11 @@ const char *provider_name(Provider p);
 bool provider_parse(const char *name, Provider *p);
 const char *provider_key(Config *c, Provider p);
 Transport provider_http(Config *c, Provider p, const char *endpoint, const char *body);
-Doc *provider_request(Config *c, bool decision, J *request, const char **endpoint);
-Doc *provider_response(Provider p, bool decision, const char *endpoint, J *response);
+Doc *provider_request(Config *c, ModelRole decision, J *request, const char **endpoint);
+Doc *provider_response(Provider p, ModelRole decision, const char *endpoint, J *response);
 Doc *provider_models(Config *c, Provider p, char **error);
 Doc *ai_settings(App *a);
-Doc *ai_settings_update(App *a, J *in, bool connection, int *status);
+Doc *ai_settings_update(App *a, J *in, SettingsKind connection, int *status);
 bool ai_settings_load(App *a, char **error);
 bool tokenizer_init(char **error);
 void tokenizer_destroy(void);

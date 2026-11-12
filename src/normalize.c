@@ -6,6 +6,9 @@
 #include <fcntl.h>
 #include <errno.h>
 
+typedef enum { MESSAGE_NATIVE, MESSAGE_SYNTHETIC } MessageOrigin;
+typedef enum { ATTRIBUTED, UNCERTAIN } Attribution;
+
 typedef struct {
     Doc *d;
     size_t offset, line;
@@ -29,7 +32,7 @@ static void title_record(Normal *n, const char *title, const char *kind) {
     }
 
     /* A generated summary must not replace a user's explicit session name. */
-    if (!strcmp(sget(n->meta, "title_kind"), "custom") && strcmp(kind, "custom")) {
+    if (!strcmp(sget(n->meta, "title_kind"), TITLE_CUSTOM) && strcmp(kind, TITLE_CUSTOM)) {
         return;
     }
 
@@ -113,7 +116,8 @@ static bool injected(const char *s) {
     }
     return false;
 }
-static void message(Normal *n, const char *role, const char *s, bool synthetic, bool uncertain) {
+static void message(Normal *n, const char *role, const char *s, MessageOrigin synthetic,
+                    Attribution uncertain) {
     if (!s || !*s) {
         return;
     }
@@ -191,7 +195,7 @@ static void claude(Normal *n, J *r) {
     const char *type = sget(r, "type");
     if (!strcmp(type, "custom-title") || !strcmp(type, "summary")) {
         const char *title = *sget(r, "customTitle") ? sget(r, "customTitle") : sget(r, "summary");
-        title_record(n, title, !strcmp(type, "custom-title") ? "custom" : "summary");
+        title_record(n, title, !strcmp(type, "custom-title") ? TITLE_CUSTOM : "summary");
         return;
     }
     if (strcmp(type, "user") && strcmp(type, "assistant") && strcmp(type, "system")) {
@@ -249,14 +253,16 @@ static void claude(Normal *n, J *r) {
     bool synthetic = boolean(get(r, "isMeta"));
     bool uncertain = get(r, "userType") && !is(get(r, "userType"), "external");
     if (yyjson_mut_is_str(content)) {
-        message(n, type, str(content), synthetic, uncertain);
+        message(n, type, str(content), (synthetic) ? MESSAGE_SYNTHETIC : MESSAGE_NATIVE,
+                (uncertain) ? UNCERTAIN : ATTRIBUTED);
     } else {
         size_t i, max;
         J *b;
         yyjson_mut_arr_foreach(content, i, max, b) {
             const char *bt = sget(b, "type");
             if (!strcmp(bt, "text")) {
-                message(n, type, sget(b, "text"), synthetic, uncertain);
+                message(n, type, sget(b, "text"), (synthetic) ? MESSAGE_SYNTHETIC : MESSAGE_NATIVE,
+                        (uncertain) ? UNCERTAIN : ATTRIBUTED);
             } else if (!strcmp(bt, "thinking")) {
                 if (*sget(b, "thinking")) {
                     text_field(n, event(n, "assistant", "reasoning"), sget(b, "thinking"));
@@ -276,7 +282,9 @@ static void claude(Normal *n, J *r) {
                     put(n->d, e, "ok", jb(n->d, !boolean(get(b, "is_error"))));
                 }
             } else if (!strcmp(bt, "image")) {
-                message(n, type, "[image omitted]", synthetic, uncertain);
+                message(n, type, "[image omitted]",
+                        (synthetic) ? MESSAGE_SYNTHETIC : MESSAGE_NATIVE,
+                        (uncertain) ? UNCERTAIN : ATTRIBUTED);
             } else if (strcmp(bt, "redacted_thinking")) {
                 n->unsupported++;
             }
@@ -306,7 +314,7 @@ static void codex(Normal *n, J *r) {
         J *base = get(p, "base_instructions");
         const char *base_text = yyjson_mut_is_str(base) ? str(base) : sget(base, "text");
         if (*base_text) {
-            message(n, "system", base_text, false, false);
+            message(n, "system", base_text, MESSAGE_NATIVE, ATTRIBUTED);
         }
         return;
     }
@@ -378,7 +386,7 @@ static void codex(Normal *n, J *r) {
             role = "system";
         }
         char *s = content_text(get(p, "content"), n);
-        message(n, role, s, false, false);
+        message(n, role, s, MESSAGE_NATIVE, ATTRIBUTED);
         free(s);
     } else if (!strcmp(pt, "function_call") || !strcmp(pt, "custom_tool_call")) {
         J *e = event(n, "assistant", "tool_call");

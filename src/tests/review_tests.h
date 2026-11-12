@@ -8,7 +8,7 @@ static Transport retrieval_fake(const char *endpoint, const char *body, const ch
         CHECK(!strcmp(sget(yyjson_mut_arr_get(get(root(req), "questions"), 0), "name"), "domain"));
         doc_free(req);
         return (Transport){
-            .status = 200,
+            .status = STATUS_OK,
             .body = xstrdup("{\"answers\":[{\"name\":\"domain\",\"type\":\"choice\",\"choice\":"
                             "\"frontend\",\"confidence\":0.9}],\"usage\":{\"input_tokens\":40}}")};
     }
@@ -16,7 +16,7 @@ static Transport retrieval_fake(const char *endpoint, const char *body, const ch
     if (retrieval_calls++ == 0 && yyjson_mut_arr_size(get(root(req), "tools"))) {
         doc_free(req);
         return (Transport){
-            .status = 200,
+            .status = STATUS_OK,
             .body = xstrdup("{\"output\":[{\"type\":\"function_call\",\"call_id\":\"read1\","
                             "\"name\":\"read_content\",\"arguments\":\"{\\\"path\\\":\\\"../"
                             "outside\\\",\\\"offset\\\":0}\"}],\"usage\":{\"input_tokens\":30,"
@@ -85,7 +85,7 @@ static void test_symbiosic(App *a) {
               "work\",\"analysis_prompt\":\"Check custom constraints.\"}");
     int status;
     Doc *updated = domains_update(a, root(domain), &status);
-    CHECK(status == 200 && get(root(updated), "custom-review"));
+    CHECK(status == STATUS_OK && get(root(updated), "custom-review"));
     doc_free(updated);
     doc_free(domain);
     char *project = fmt("%s/project", a->cfg.data_dir);

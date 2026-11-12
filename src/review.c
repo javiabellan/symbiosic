@@ -5,6 +5,10 @@
 #include <time.h>
 #include <sys/stat.h>
 
+typedef enum { REVIEW_ANALYSIS, REVIEW_CHAT } ReviewKind;
+typedef enum { EVIDENCE_AGENTIC, EVIDENCE_FULL } EvidenceMode;
+typedef enum { TOOLS_DISABLED, TOOLS_ENABLED } ToolMode;
+
 #define REVIEW_CALLS 8
 static Doc *read_json(const char *path, char **error) {
     size_t n;
@@ -37,7 +41,7 @@ static char *response_text(J *r) {
     }
     return b.s ? b.s : xstrdup("");
 }
-static bool result_valid(J *r, bool chat) {
+static bool result_valid(J *r, ReviewKind chat) {
     if (!yyjson_mut_is_obj(r)) {
         return false;
     }
@@ -211,7 +215,7 @@ static char *source_full(J *source, size_t budget, bool *full) {
     }
     return b.s ? b.s : xstrdup("Empty directory");
 }
-static char *initial_evidence(J *source, bool full, const char *content) {
+static char *initial_evidence(J *source, EvidenceMode full, const char *content) {
     if (full) {
         return fmt("Mode: full.\n%s", content);
     }
@@ -224,7 +228,7 @@ static char *initial_evidence(J *source, bool full, const char *content) {
     doc_free(index);
     return out;
 }
-static char *render_frozen(J *quote, const char *domain, bool chat, char **error) {
+static char *render_frozen(J *quote, const char *domain, ReviewKind chat, char **error) {
     App frozen = {0};
     Doc *prompts = doc_new(), *vars = doc_new();
     yyjson_mut_doc_set_root(prompts, copy(prompts, get(quote, "prompts")));
@@ -237,8 +241,8 @@ static char *render_frozen(J *quote, const char *domain, bool chat, char **error
     doc_free(prompts);
     return text;
 }
-static Doc *request_wire(Config *cfg, J *quote, J *input, const char *prompt, bool tools_enabled,
-                         bool chat, const char **endpoint) {
+static Doc *request_wire(Config *cfg, J *quote, J *input, const char *prompt,
+                         ToolMode tools_enabled, ReviewKind chat, const char **endpoint) {
     Doc *d = doc_new();
     put(d, root(d), "model", copy(d, get(quote, "model")));
     put(d, root(d), "store", jb(d, false));
@@ -267,7 +271,7 @@ static Doc *request_wire(Config *cfg, J *quote, J *input, const char *prompt, bo
     }
     put(d, text, "format", format);
     put(d, root(d), "text", text);
-    Doc *wire = provider_request(cfg, false, root(d), endpoint);
+    Doc *wire = provider_request(cfg, MODEL_GENERATION, root(d), endpoint);
     doc_free(d);
     return wire;
 }
@@ -403,7 +407,8 @@ Doc *estimate_build(App *a, Snapshot *snap, Doc *selection, char **error) {
     }
     bool full = false;
     char *content = source_full(root(source), budget - overhead, &full);
-    char *evidence = initial_evidence(root(source), full, content ? content : "");
+    char *evidence = initial_evidence(root(source), (full) ? EVIDENCE_FULL : EVIDENCE_AGENTIC,
+                                      content ? content : "");
     free(content);
     put(d, r, "mode", js(d, full ? "full" : "agentic"));
     put(d, r, "max_calls", ji(d, full ? 1 : REVIEW_CALLS));
@@ -425,13 +430,17 @@ Doc *estimate_build(App *a, Snapshot *snap, Doc *selection, char **error) {
     Config cfg = a->cfg;
     cfg.chat = model;
     cfg.chat_model = (char *)model_id;
-    char *prompt = render_frozen(r, automatic ? "software-engineering" : domain, false, error);
+    char *prompt =
+        render_frozen(r, automatic ? "software-engineering" : domain, REVIEW_ANALYSIS, error);
     Doc *input = doc_new();
     yyjson_mut_doc_set_root(input, arr(input));
     msg(input, root(input), "user", evidence);
     free(evidence);
     const char *endpoint = NULL;
-    Doc *wire = prompt ? request_wire(&cfg, r, root(input), prompt, !full, false, &endpoint) : NULL;
+    Doc *wire =
+        prompt ? request_wire(&cfg, r, root(input), prompt,
+                              (!full) ? TOOLS_ENABLED : TOOLS_DISABLED, REVIEW_ANALYSIS, &endpoint)
+               : NULL;
     free(prompt);
     doc_free(input);
     if (!wire) {
@@ -521,7 +530,8 @@ Doc *estimate_build(App *a, Snapshot *snap, Doc *selection, char **error) {
     }
     return d;
 }
-static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, bool chat, char **error) {
+static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, ReviewKind chat,
+                       char **error) {
     ModelConfig model;
     if (!model_config_parse(get(quote, "model_config"), &model)) {
         *error = xstrdup("Invalid frozen model configuration");
@@ -592,7 +602,7 @@ static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, bool chat, 
         transport_free(&t);
     }
     put(d, r, "domain_name", copy(d, get(get(get(quote, "domains"), domain), "name")));
-    char *prompt = render_frozen(quote, domain, chat, error);
+    char *prompt = render_frozen(quote, domain, (chat) ? REVIEW_CHAT : REVIEW_ANALYSIS, error);
     if (!prompt) {
         put(d, r, "error", js(d, *error));
         free(*error);
@@ -610,7 +620,9 @@ static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, bool chat, 
     for (int round = 0; round < max_calls; round++) {
         bool allow_tools = agentic && !force_final && round < max_calls - 1;
         const char *endpoint = NULL;
-        Doc *wire = request_wire(&cfg, quote, root(history), prompt, allow_tools, chat, &endpoint);
+        Doc *wire = request_wire(&cfg, quote, root(history), prompt,
+                                 (allow_tools) ? TOOLS_ENABLED : TOOLS_DISABLED,
+                                 (chat) ? REVIEW_CHAT : REVIEW_ANALYSIS, &endpoint);
         size_t tokens = token_json(root(wire));
         if (tokens > budget) {
             doc_free(wire);
@@ -628,7 +640,7 @@ static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, bool chat, 
         free(body);
         put(d, audit, "raw_response", js(d, t.body));
         Doc *raw = t.body ? doc_parse(t.body, strlen(t.body)) : NULL,
-            *response = provider_response(model.provider, false, endpoint, root(raw));
+            *response = provider_response(model.provider, MODEL_GENERATION, endpoint, root(raw));
         doc_free(raw);
         if (t.error || !response) {
             put(d, r, "error", js(d, t.error ? t.error : "Provider returned an invalid response"));
@@ -648,7 +660,7 @@ static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, bool chat, 
             char *text = response_text(root(response));
             Doc *result = doc_parse(text, strlen(text));
             free(text);
-            if (!result_valid(root(result), chat)) {
+            if (!result_valid(root(result), (chat) ? REVIEW_CHAT : REVIEW_ANALYSIS)) {
                 put(d, r, "error",
                     js(d, "The provider did not return the required structured result (or "
                           "refused). No automatic retry was made."));
@@ -703,7 +715,8 @@ static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, bool chat, 
             add(root(history), output);
         }
         doc_free(response);
-        Doc *next = request_wire(&cfg, quote, root(history), prompt, true, chat, &endpoint);
+        Doc *next = request_wire(&cfg, quote, root(history), prompt, TOOLS_ENABLED,
+                                 (chat) ? REVIEW_CHAT : REVIEW_ANALYSIS, &endpoint);
         if (token_json(root(next)) > budget - 512) {
             force_final = true;
         }
@@ -733,7 +746,7 @@ Doc *analyze_entry(App *a, J *quote, J *entry, Docs *cache, char **error) {
             xstrdup("Legacy analysis estimates are retired; create a new single-item estimate");
         return NULL;
     }
-    Doc *d = run_review(a, quote, entry, NULL, false, error);
+    Doc *d = run_review(a, quote, entry, NULL, REVIEW_ANALYSIS, error);
     if (!d) {
         return NULL;
     }
@@ -819,7 +832,7 @@ Doc *review_chat_turn(App *a, Doc *original, Snapshot *snap, const char *text, c
         msg(extra, root(extra), "user", text);
     }
     Doc *result = run_review(a, root(quote), yyjson_mut_arr_get(get(root(quote), "entries"), 0),
-                             root(extra), true, error);
+                             root(extra), REVIEW_CHAT, error);
     doc_free(extra);
     doc_free(quote);
     doc_free(analysis);
