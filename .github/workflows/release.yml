@@ -1,0 +1,103 @@
+name: Build and release
+on:
+  push:
+    branches: [main, codex/finish-app]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: macos-arm64
+          - os: macos-15-intel
+            target: macos-x86_64
+          - os: ubuntu-22.04
+            target: linux-x86_64
+          - os: windows-2022
+            target: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install pkg-config libuv
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev libuv1-dev pkg-config
+          python3 -m pip install cmake==3.31.6
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: MSYS
+          update: true
+          install: gcc make cmake pkgconf libcurl-devel libuv-devel python unzip binutils mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
+      - name: Unix build and tests
+        if: runner.os != 'Windows'
+        working-directory: src
+        run: |
+          sh scripts/install-tiktoken.sh .deps
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 4
+          ctest --test-dir build --output-on-failure
+          cp build/symbiosic symbiosic
+          python3 tests/http_test.py
+          python3 scripts/package.py '${{ matrix.target }}'
+      - name: Windows build and tests
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          cd src
+          sh scripts/install-tiktoken.sh .deps
+          cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 4
+          cp .deps/tiktoken_c.dll build/
+          ctest --test-dir build --output-on-failure
+          cp build/symbiosic.exe symbiosic.exe
+          python tests/http_test.py
+          python scripts/package.py windows-x86_64
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+      - name: Browser regressions
+        if: runner.os == 'Linux'
+        working-directory: src
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: src/dist/*
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Publish packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" packages/* --verify-tag --title "Symbiosic $TAG" --generate-notes

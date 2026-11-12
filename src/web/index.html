@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Symbiosic</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+  <div class="shell">
+    <aside class="sidebar" aria-label="Sessions">
+      <div class="brand">symbiosic<span style="color: #8aab92">.</span></div>
+      <div class="tagline">Session workspace</div>
+      <div class="inventory">
+        <span id="inventory" class="eyebrow">Your workspace</span
+        ><span class="dot" title="Local workspace"></span>
+      </div>
+      <input
+        id="search"
+        class="search"
+        aria-label="Search sessions"
+        placeholder="Search sessions…"
+      />
+      <button id="toggle-sessions" class="mobile-nav" aria-controls="tree" aria-expanded="false">
+        Sessions
+      </button>
+      <nav class="tree" id="tree"></nav>
+      <div class="footer">
+        <div id="source-bar" class="source-bar"></div>
+        <div id="source-legend" class="source-legend"></div>
+        <button id="settings" class="settings-button"></button>
+        <div class="local-status">
+          <span class="dot"></span><span id="local-status">Local workspace</span>
+        </div>
+      </div>
+    </aside>
+    <main class="workspace" id="workspace">
+      <header id="workspace-head" class="workspace-head"></header>
+      <div id="filters" class="filters" hidden></div>
+      <div id="content" class="content"></div>
+      <div id="trace-area" class="trace-area" hidden>
+        <div id="conversation" class="conversation"></div>
+        <nav id="minimap" class="minimap" aria-label="Conversation overview"></nav>
+      </div>
+    </main>
+    <aside class="rightbar" id="rightbar" aria-label="Analysis"></aside>
+  </div>
+  <div id="error" class="notice error app-error" role="alert"></div>
+  <dialog id="settings-dialog" class="settings-dialog">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">Preferences</span>
+        <h2 style="margin-top: 4px">Settings</h2>
+      </div>
+      <button class="close" aria-label="Close settings" data-close="settings-dialog">×</button>
+    </div>
+    <div class="settings-layout">
+      <nav class="settings-nav">
+        <button id="providers-tab" class="active">AI providers</button
+        ><button id="domains-tab">Domains</button>
+      </nav>
+      <div id="settings-main" class="settings-main"></div>
+    </div>
+    <div class="modal-foot">
+      <span id="settings-status" class="grow muted" style="font-size: 11px" role="status"></span
+      ><button id="save-settings" class="primary">Save changes</button>
+    </div>
+  </dialog>
+  <script src="/app.js" defer></script>
+</html>
