@@ -9,6 +9,8 @@
 typedef struct Conn {
     uv_tcp_t tcp;
     uv_write_t write;
+    uv_shutdown_t shutdown;
+    uv_timer_t drain;
     llhttp_t parser;
     App *app;
     struct Conn *next;
@@ -21,7 +23,9 @@ typedef struct Conn {
     bool header_done, complete, value_seen, closed, responded;
     int failure;
 } Conn;
+enum { RESPONSE_DRAIN_MS = 1000 };
 static llhttp_settings_t settings;
+static void alloc_read(uv_handle_t *h, size_t size, uv_buf_t *buf);
 static void release(Conn *c) {
     if (--c->refs) {
         return;
@@ -47,17 +51,63 @@ static void closed(uv_handle_t *h) {
     }
     release(c);
 }
+static void drain_closed(uv_handle_t *handle) {
+    release(handle->data);
+}
 static void close_conn(Conn *c) {
     if (!c->closed) {
         c->closed = true;
         uv_read_stop((uv_stream_t *)&c->tcp);
+        if (c->drain.data && !uv_is_closing((uv_handle_t *)&c->drain)) {
+            uv_close((uv_handle_t *)&c->drain, drain_closed);
+        }
         uv_close((uv_handle_t *)&c->tcp, closed);
     }
 }
+static void drain_timeout(uv_timer_t *timer) {
+    close_conn(timer->data);
+}
+static void drain_read(uv_stream_t *stream, ssize_t count, const uv_buf_t *buf) {
+    free(buf->base);
+    if (count < 0) {
+        close_conn(stream->data);
+    }
+}
+static void shutdown_done(uv_shutdown_t *request, int status) {
+    Conn *c = request->data;
+    if (status < 0) {
+        close_conn(c);
+    }
+    release(c);
+}
 static void written(uv_write_t *w, int status) {
-    (void)status;
     Conn *c = w->data;
-    close_conn(c);
+    if (status < 0 || c->closed || c->complete) {
+        close_conn(c);
+        release(c);
+        return;
+    }
+
+    /* Drain rejected bodies after a half-close so unread input cannot reset the response. */
+    if (uv_timer_init(&c->app->loop, &c->drain)) {
+        close_conn(c);
+        release(c);
+        return;
+    }
+    c->drain.data = c;
+    c->refs++;
+    uv_timer_start(&c->drain, drain_timeout, RESPONSE_DRAIN_MS, 0);
+    if (uv_read_start((uv_stream_t *)&c->tcp, alloc_read, drain_read)) {
+        close_conn(c);
+        release(c);
+        return;
+    }
+    c->shutdown.data = c;
+    c->refs++;
+    if (uv_shutdown(&c->shutdown, (uv_stream_t *)&c->tcp, shutdown_done)) {
+        release(c);
+        close_conn(c);
+    }
     release(c);
 }
 static void send_bytes(Conn *c, int status, const char *type, const char *body) {

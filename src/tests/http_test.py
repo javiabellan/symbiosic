@@ -139,6 +139,8 @@ with tempfile.TemporaryDirectory(prefix="symbiosic-http-") as temporary:
         check(request("GET", "/api/trace?id=..%2F.env")[0] == 400, "Opaque IDs checked")
         check(request("POST", "/api/analyze", {"quote_id": "0" * 32})[0] == 404, "Missing quote")
         check(request("POST", "/api/chat/message", {"chat_id": "0" * 32, "text": "x" * 17000})[0] == 413, "Oversize body blocked")
+        rejected = raw_request([f"POST /api/chat/message HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: 100000\r\n\r\n".encode()])
+        check(rejected.startswith(b"HTTP/1.1 413"), "Early rejection survives a body that never arrives")
         head = f"GET /api/state HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n".encode()
         fragmented = raw_request([head[i:i+3] for i in range(0, len(head), 3)])
         check(fragmented.startswith(b"HTTP/1.1 200"), "Fragmented headers parsed")
