@@ -61,7 +61,7 @@ def copy_assets(root, binary):
                 shutil.copy2(source/name, licenses/f'{dependency}.txt')
                 break
     (licenses/'SOURCES.txt').write_text('Dependency sources and licenses: https://github.com/javiabellan/symbiosic/tree/main/src/README.md#dependencies\n')
-    (root/'README.txt').write_text('Symbiosic\nBrowse local Claude Code and Codex sessions.\nLaunch the app, then use the browser workspace.\nSettings: provider keys and model defaults.\nAnalysis sends selected content to your provider.\nhttps://github.com/javiabellan/symbiosic\n')
+    (root/'README.txt').write_text('Symbiosic\nBrowse local Claude Code and Codex sessions in a native desktop window.\nClose the window to stop the local server.\nLinux requires GTK 3 and WebKitGTK 4.1; Windows requires Microsoft Edge WebView2 Runtime.\nSettings: provider keys and model defaults.\nAnalysis sends selected content to your provider.\nhttps://github.com/javiabellan/symbiosic\n')
 
 def mac_libs(binary, directory):
     directory.mkdir()
@@ -82,7 +82,7 @@ def mac_libs(binary, directory):
                 run('install_name_tool','-id','@loader_path/'+name,directory/name)
             elif copied[name] != source:
                 raise RuntimeError('Conflicting library names: '+name)
-            reference = '@loader_path/../lib/'+name if target == binary else '@loader_path/'+name
+            reference = '@loader_path/../Resources/lib/'+name if target == binary else '@loader_path/'+name
             run('install_name_tool','-change',source,reference,target)
     for target in [*directory.iterdir(), binary]:
         run('codesign','--force','--sign','-',target)
@@ -92,10 +92,12 @@ def macos(stage, out, target, binary):
     contents = app/'Contents'
     resources = contents/'Resources'
     copy_assets(resources,binary)
-    mac_libs(resources/'bin'/binary.name, resources/'lib')
     native = contents/'MacOS'
     native.mkdir()
-    run('clang','-fobjc-arc','-framework','Cocoa',SRC/'packaging/macos.m','-o',native/APP)
+    shutil.move(resources/'bin'/binary.name, native/APP)
+    # Keep a headless entry point for package tests and command-line use.
+    (resources/'bin'/binary.name).symlink_to('../../MacOS/'+APP)
+    mac_libs(native/APP, resources/'lib')
     iconset = stage/'AppIcon.iconset'
     iconset.mkdir()
     for size in [16,32,128,256,512]:
@@ -109,7 +111,7 @@ def macos(stage, out, target, binary):
         versions.extend(tuple(map(int, value.split('.'))) for value in re.findall(r'\bminos\s+([\d.]+)', run('otool', '-l', executable)))
     minimum_os = '.'.join(map(str, max(versions)))
     with (contents/'Info.plist').open('wb') as file:
-        plistlib.dump({'CFBundleName':APP,'CFBundleDisplayName':APP,'CFBundleIdentifier':'io.github.javiabellan.symbiosic','CFBundleVersion':'1','CFBundleShortVersionString':'0.1.0','CFBundlePackageType':'APPL','CFBundleExecutable':APP,'CFBundleIconFile':'AppIcon','LSMinimumSystemVersion':minimum_os,'NSHighResolutionCapable':True},file)
+        plistlib.dump({'CFBundleName':APP,'CFBundleDisplayName':APP,'CFBundleIdentifier':'io.github.javiabellan.symbiosic','CFBundleVersion':'1','CFBundleShortVersionString':'0.1.0','CFBundlePackageType':'APPL','CFBundleExecutable':APP,'CFBundleIconFile':'AppIcon','LSMinimumSystemVersion':minimum_os,'NSHighResolutionCapable':True,'NSLocalNetworkUsageDescription':'Symbiosic connects to its local workspace server.','NSAppTransportSecurity':{'NSAllowsLocalNetworking':True}},file)
     run('codesign','--force','--deep','--sign','-',app)
     image = stage/'image'
     image.mkdir()
@@ -124,12 +126,27 @@ def linux(stage, out, target, binary):
     copy_assets(root,binary)
     libs = root/'lib'
     libs.mkdir()
-    # Bundle the dependency closure; use the target system's glibc and dynamic loader.
-    for line in run('ldd',binary).splitlines():
+    # WebKitGTK/GTK and their helper processes, resources and drivers come from
+    # the OS. Bundling their .so closure alone would produce a broken runtime.
+    webview_runtime = ('libwebkit', 'libjavascriptcore', 'libgtk', 'libgdk',
+                       'libglib', 'libgobject', 'libgio', 'libgmodule', 'libgthread')
+    # ldd lists transitive GUI dependencies too; let their system packages own
+    # that closure. Bundle just the backend dependency closure separately.
+    backend_libraries = set()
+    for module in ['libcurl', 'libuv']:
+        directory = Path(run('pkg-config', '--variable=libdir', module).strip())
+        name = 'libcurl.so' if module == 'libcurl' else 'libuv.so'
+        backend_libraries.add(str((directory/name).resolve()))
+    dependency_lines = [line for library in backend_libraries for line in run('ldd', library).splitlines()]
+    dependency_lines += [f'=> {library}' for library in backend_libraries]
+    for line in dependency_lines:
         match = re.search(r'=> (/\S+)',line)
-        if not match or Path(match[1]).name in SYSTEM_LIBS:
+        if not match or Path(match[1]).name in SYSTEM_LIBS or Path(match[1]).name.startswith(webview_runtime):
             continue
-        shutil.copy2(match[1],libs/Path(match[1]).name)
+        # Use the SONAME so copied symlink targets remain discoverable.
+        source = Path(match[1])
+        soname = re.search(r'\(SONAME\).*?\[(.*?)\]', run('readelf', '-d', source))
+        shutil.copy2(source, libs/(soname[1] if soname else source.name))
     launcher = root/'AppRun'
     launcher.write_text('''#!/bin/sh
 set -eu
@@ -137,20 +154,7 @@ base=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 export LD_LIBRARY_PATH="$base/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export DATA_DIR="${DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/symbiosic}"
 cd "$base"
-log=$(mktemp)
-./bin/symbiosic > "$log" &
-server=$!
-trap 'kill "$server" 2>/dev/null || true; rm -f "$log"' EXIT HUP INT TERM
-while kill -0 "$server" 2>/dev/null; do
- url=$(sed -n '1p' "$log")
- if [ -n "$url" ]; then
-  printf '%s\\n' "$url"
-  xdg-open "$url" >/dev/null 2>&1 &
-  break
- fi
- sleep .2
-done
-wait "$server"
+exec ./bin/symbiosic "$@"
 ''')
     launcher.chmod(0o755)
     install = root/'install.sh'
@@ -215,13 +219,14 @@ def windows(stage, out, target, binary):
     resource.write_text('1 ICON "'+icon_path+'"\n')
     # Native binutils need native paths and the MinGW compiler on PATH.
     os.environ['PATH'] = '/mingw64/bin:' + os.environ['PATH']
-    compiler = run('cygpath', '-m', '/mingw64/bin/gcc.exe').strip()
     native_resource = run('cygpath', '-m', resource).strip()
-    native_object = run('cygpath', '-m', stage/'icon.o').strip()
-    native_source = run('cygpath', '-m', SRC/'packaging/windows.c').strip()
-    native_exe = run('cygpath', '-m', root/'Symbiosic.exe').strip()
-    run('/mingw64/bin/windres', '--preprocessor', compiler, '--preprocessor-arg=-E', '--preprocessor-arg=-xc-header', '--preprocessor-arg=-DRC_INVOKED', '-O', 'coff', native_resource, '-o', native_object)
-    run('/mingw64/bin/gcc', '-municode', '-static', native_source, native_object, '-lshell32', '-o', native_exe)
+    # The MSYS server remains C17. Only this tiny webview host uses native MinGW.
+    host_build = SRC/'build/windows-host'
+    run('/mingw64/bin/cmake', '-S', run('cygpath', '-m', SRC/'packaging/windows').strip(),
+        '-B', run('cygpath', '-m', host_build).strip(), '-G', 'MinGW Makefiles',
+        '-DCMAKE_BUILD_TYPE=Release', '-DSYMBIOSIC_ICON_RESOURCE='+native_resource)
+    run('/mingw64/bin/cmake', '--build', run('cygpath', '-m', host_build).strip(), '--parallel', '4')
+    shutil.copy2(host_build/'Symbiosic.exe', root/'Symbiosic.exe')
     # Distribute MSYS package notices alongside the runtime.
     notices = Path('/usr/share/licenses')
     if notices.exists():

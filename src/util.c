@@ -460,7 +460,7 @@ bool config_load(Config *c, char **error) {
     char *end;
     const char *s = ENV("PORT", "4317");
     long port = strtol(s, &end, 10);
-    if (!*s || *end || port < 1 || port > 65535) {
+    if (!*s || *end || port < 0 || port > 65535) {
         goto invalid;
     }
     c->port = (int)port;

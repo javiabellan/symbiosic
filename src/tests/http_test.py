@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix="symbiosic-http-") as temporary:
     process = None
 
     def start():
-        p = subprocess.Popen([str(ROOT / "symbiosic")], cwd=ROOT, env=env,
+        p = subprocess.Popen([str(ROOT / "symbiosic"), "--headless"], cwd=ROOT, env=env,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         line = p.stdout.readline().strip()
         if line != f"http://127.0.0.1:{port}":

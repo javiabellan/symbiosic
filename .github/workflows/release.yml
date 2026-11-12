@@ -37,14 +37,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libuv1-dev pkg-config
+          sudo apt-get install -y libcurl4-openssl-dev libuv1-dev pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev xvfb
           python3 -m pip install cmake==3.31.6
       - uses: msys2/setup-msys2@v2
         if: runner.os == 'Windows'
         with:
           msystem: MSYS
           update: true
-          install: gcc make cmake pkgconf ca-certificates libcurl-devel libzstd-devel libuv-devel python unzip binutils mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
+          install: gcc make cmake pkgconf ca-certificates libcurl-devel libzstd-devel libuv-devel python unzip binutils mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils mingw-w64-x86_64-cmake mingw-w64-x86_64-make
       - name: Unix build and tests
         if: runner.os != 'Windows'
         working-directory: src
@@ -55,6 +55,9 @@ jobs:
           ctest --test-dir build --output-on-failure
           cp build/symbiosic symbiosic
           python3 tests/http_test.py
+          if [[ '${{ runner.os }}' == 'Linux' ]]; then
+            xvfb-run -a python3 tests/desktop_test.py build/symbiosic
+          fi
           python3 scripts/package.py '${{ matrix.target }}'
           if [[ '${{ runner.os }}' == 'macOS' ]]; then
             python3 tests/package_test.py dist/symbiosic-${{ matrix.target }}.dmg

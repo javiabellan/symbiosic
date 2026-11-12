@@ -1,4 +1,7 @@
 CC ?= cc
+CMAKE ?= cmake
+CMAKE_ARGS ?=
+DESKTOP ?= $(if $(filter MSYS% CYGWIN%,$(shell uname -s)),OFF,ON)
 PKG_CONFIG ?= pkg-config
 # llhttp does not ship a .pc file on all systems (including Homebrew).
 PREFIX ?= $(shell test -d /opt/homebrew && echo /opt/homebrew || echo /usr/local)
@@ -14,12 +17,14 @@ LDLIBS += $(TIKTOKEN_DIR)/libtiktoken_c.a $(if $(filter Darwin,$(shell uname -s)
 LDLIBS += $(if $(filter MSYS% CYGWIN%,$(shell uname -s)),-ladvapi32,)
 SOURCES = prompts.c directory.c review.c fidelity.c providers.c util.c store.c normalize.c query.c ai.c chat.c main.c http.c
 OBJECTS = $(SOURCES:.c=.o)
-.PHONY: all test clean sanitize deps
+.PHONY: all test clean sanitize deps symbiosic
 all: symbiosic
 deps:
 	sh scripts/install-tiktoken.sh $(TIKTOKEN_DIR)
-symbiosic: $(OBJECTS) $(TIKTOKEN_DIR)/libtiktoken_c.a
-	$(CC) $(LDFLAGS) -o $@ $(OBJECTS) $(LDLIBS)
+symbiosic: $(TIKTOKEN_DIR)/libtiktoken_c.a
+	$(CMAKE) -S . -B build -DCMAKE_BUILD_TYPE=Release -DSYMBIOSIC_DESKTOP=$(DESKTOP) -DTIKTOKEN_DIR="$(abspath $(TIKTOKEN_DIR))" $(CMAKE_ARGS)
+	$(CMAKE) --build build --target symbiosic --parallel 4
+	cp build/symbiosic$(if $(filter MSYS% CYGWIN%,$(shell uname -s)),.exe,) $@$(if $(filter MSYS% CYGWIN%,$(shell uname -s)),.exe,)
 %.o: %.c app.h $(TIKTOKEN_DIR)/tiktoken.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 tests/test_symbiosic: tests/test.c $(wildcard tests/*_tests.h) $(SOURCES) app.h $(TIKTOKEN_DIR)/libtiktoken_c.a
@@ -27,8 +32,10 @@ tests/test_symbiosic: tests/test.c $(wildcard tests/*_tests.h) $(SOURCES) app.h 
 test: tests/test_symbiosic symbiosic
 	./tests/test_symbiosic
 	python3 tests/http_test.py
+	python3 tests/lifecycle_test.py ./symbiosic
 sanitize: $(TIKTOKEN_DIR)/libtiktoken_c.a
 	$(CC) $(CPPFLAGS) -std=c17 -Wall -Wextra -g -O1 -fsanitize=address,undefined -DSYMBIOSIC_TEST -I. $(LDFLAGS) -o tests/test_sanitize tests/test.c $(SOURCES) $(LDLIBS)
 	./tests/test_sanitize
 clean:
-	rm -f symbiosic $(OBJECTS) tests/test_symbiosic tests/test_sanitize
+	rm -f symbiosic symbiosic.exe $(OBJECTS) tests/test_symbiosic tests/test_sanitize
+	if [ -f build/CMakeCache.txt ]; then $(CMAKE) --build build --target clean; fi

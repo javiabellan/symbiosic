@@ -87,6 +87,8 @@ typedef struct App {
     uv_tcp_t server;
     uv_timer_t poll;
     uv_signal_t sigint, sigterm;
+    uv_pipe_t parent_input;
+    bool parent_input_open;
     int lock_fd;
     bool stopping, ingest_busy, ingest_pending, ai_busy;
     uint64_t catalog_revision;
@@ -234,4 +236,8 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status);
 Doc *state_doc(App *a);
 bool app_init(App *a, char **error);
 void app_destroy(App *a);
+bool desktop_run(App *a, char **error);
+#ifdef __APPLE__
+bool desktop_macos_bootstrap(char **error);
+#endif
 #endif

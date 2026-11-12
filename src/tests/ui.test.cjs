@@ -25,7 +25,7 @@ before(async () => {
       text.replaceAll("/work//app/./src/..", project).replaceAll("/work/app", project),
     );
   }
-  server = spawn(path.join(ROOT, "symbiosic"), [], {
+  server = spawn(path.join(ROOT, "symbiosic"), ["--headless"], {
     cwd: ROOT,
     env: {
       ...process.env,

@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='symbiosic-bundle-') as temporary:
             listener.bind(('127.0.0.1',0))
             port = listener.getsockname()[1]
         env = dict(os.environ, DATA_DIR=str(base/'data'), CLAUDE_ROOT=str(base/'claude'), CODEX_ROOT=str(base/'codex'), OPENAI_API_KEY='', ANTHROPIC_API_KEY='', OPENROUTER_API_KEY='', GEMINI_API_KEY='', PORT=str(port), LD_LIBRARY_PATH=str(root/'lib'))
-        process = subprocess.Popen([str(binary)],cwd=root,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        process = subprocess.Popen([str(binary),'--headless'],cwd=root,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         line = process.stdout.readline().strip()
         assert line == f'http://127.0.0.1:{port}', f'Package startup failed ({process.poll()}): {line} {process.stderr.read()}; files: {sorted(path.name for path in (root/"bin").iterdir())}'
         for resource in ['/', '/app.js', '/styles.css', '/icon.svg', '/api/settings']:

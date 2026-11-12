@@ -6,7 +6,7 @@ Optimize for understandable code and a demonstrable end-to-end workflow. This sp
 
 # Runtime and project structure
 
-One foreground process serves HTTP on `127.0.0.1:4317`, discovers traces, and executes work. Do not fork, daemonize, install a service, or launch a browser automatically. Print the URL to stdout; send diagnostics to stderr. SIGINT/SIGTERM stop accepting jobs and exit cleanly.
+The desktop app embeds the OS webview and serves HTTP only on `127.0.0.1`. The default desktop port is ephemeral; an explicit `PORT` selects a fixed port, and `PORT=0` requests an ephemeral port. Run the native UI loop on the main thread and the C17 libuv server on a background thread. On Windows, a tiny native WebView2 host owns the MSYS backend process and closes its stdin pipe to request shutdown. Closing the native window, quitting, or SIGINT/SIGTERM stops accepting jobs, drains active workers, releases the data lock, and exits cleanly. `--headless` serves HTTP without a window and defaults to port 4317. Print the actual bound URL to stdout and diagnostics to stderr. Do not daemonize or install a service.
 
 Use these modules, merging adjacent modules if convenient:
 
@@ -25,7 +25,7 @@ Use these modules, merging adjacent modules if convenient:
 | `tools.json` | Four function definitions |
 | `env.template`, `Makefile`, `README.md` | Setup and operation |
 
-Use a Makefile and system-installed libraries, with overridable compiler/linker flags. No Node.js, frontend bundler, ORM, agent framework, MCP server, embeddings, or database. Compile with `-std=c17 -Wall -Wextra`; provide `make`, `make test`, and `make clean`.
+Use CMake and a Makefile entry point, with overridable compiler/linker flags. No Node.js runtime, frontend bundler, ORM, agent framework, MCP server, embeddings, or database. Compile the backend with `-std=c17 -Wall -Wextra`; link the small webview library through its C API. Only the library uses C++, with a small Objective-C macOS integration for resources and native menus. Provide `make`, `make test`, and `make clean`.
 
 libuv owns the event loop. Use `uv_queue_work` in two small lanes: at most one ingestion task and one AI task concurrently. Each lane is serialized; workers receive immutable inputs and publish results through main-loop completion callbacks. Ingestion writes only trace snapshots; AI tasks write only analysis, quote, job and chat files. Keep discovery pending at most once and yield the AI lane between trace-analysis requests. Ingestion must continue during slow network calls. No curl-multi/libuv integration is required.
 

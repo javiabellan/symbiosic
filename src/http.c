@@ -368,6 +368,13 @@ bool http_start(App *a, char **error) {
     if (!rc) {
         rc = uv_listen((uv_stream_t *)&a->server, 32, connected);
     }
+    if (!rc) {
+        int length = sizeof(addr);
+        rc = uv_tcp_getsockname(&a->server, (struct sockaddr *)&addr, &length);
+        if (!rc) {
+            a->cfg.port = ntohs(addr.sin_port);
+        }
+    }
     if (rc) {
         *error = fmt("Cannot listen: %s", uv_strerror(rc));
         uv_close((uv_handle_t *)&a->server, NULL);

@@ -639,12 +639,29 @@ static void signal_cb(uv_signal_t *handle, int sig) {
     (void)sig;
     app_shutdown(handle->data);
 }
+static void parent_alloc(uv_handle_t *handle, size_t suggested, uv_buf_t *buffer) {
+    (void)handle;
+    (void)suggested;
+    *buffer = uv_buf_init(xmalloc(64), 64);
+}
+static void parent_read(uv_stream_t *stream, ssize_t count, const uv_buf_t *buffer) {
+    free(buffer->base);
+    if (count != 0) {
+        /* The native Windows host closes stdin when its window closes or it exits. */
+        app_shutdown(stream->data);
+    }
+}
 #endif
 void app_shutdown(App *a) {
     if (a->stopping) {
         return;
     }
     a->stopping = true;
+    if (a->parent_input_open) {
+        uv_read_stop((uv_stream_t *)&a->parent_input);
+        uv_close((uv_handle_t *)&a->parent_input, NULL);
+        a->parent_input_open = false;
+    }
     fprintf(stderr,
             "symbiosic: stopping; waiting for active workers (network timeout at most 120s)\n");
     http_stop(a);
@@ -710,15 +727,44 @@ void app_destroy(App *a) {
     curl_global_cleanup();
 }
 #ifndef SYMBIOSIC_TEST
-int main(void) {
+int main(int argc, char **argv) {
+    bool headless = false, parent_stdin = false;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--headless")) {
+            headless = true;
+        } else if (!strcmp(argv[i], "--parent-stdin")) {
+            parent_stdin = headless = true;
+        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
+            printf("Usage: symbiosic [--headless]\n"
+                   "  --headless  Serve HTTP without a native window; stop with Ctrl-C.\n"
+                   "  PORT=0      Select an available loopback port automatically.\n");
+            return 0;
+        } else {
+            fprintf(stderr, "symbiosic: unknown argument: %s (try --help)\n", argv[i]);
+            return 1;
+        }
+    }
+#ifndef SYMBIOSIC_DESKTOP
+    headless = true;
+#endif
     signal(SIGPIPE, SIG_IGN);
     App a;
     char *error = NULL;
+#if defined(__APPLE__) && defined(SYMBIOSIC_DESKTOP)
+    if (!desktop_macos_bootstrap(&error)) {
+        fprintf(stderr, "symbiosic: %s\n", error);
+        free(error);
+        return 1;
+    }
+#endif
     if (!app_init(&a, &error)) {
         fprintf(stderr, "symbiosic: %s\n", error ? error : "Initialization failed");
         free(error);
         app_destroy(&a);
         return 1;
+    }
+    if ((!headless || parent_stdin) && !getenv("PORT")) {
+        a.cfg.port = 0;
     }
     uv_loop_init(&a.loop);
     if (!http_start(&a, &error)) {
@@ -738,11 +784,36 @@ int main(void) {
     a.sigterm.data = &a;
     uv_signal_start(&a.sigint, signal_cb, SIGINT);
     uv_signal_start(&a.sigterm, signal_cb, SIGTERM);
+    int status = 0;
+    if (parent_stdin) {
+        int rc = uv_pipe_init(&a.loop, &a.parent_input, 0);
+        if (!rc) {
+            a.parent_input_open = true;
+            a.parent_input.data = &a;
+            rc = uv_pipe_open(&a.parent_input, 0);
+        }
+        if (!rc) {
+            rc = uv_read_start((uv_stream_t *)&a.parent_input, parent_alloc, parent_read);
+        }
+        if (rc) {
+            fprintf(stderr, "symbiosic: cannot watch desktop host: %s\n", uv_strerror(rc));
+            app_shutdown(&a);
+            status = 1;
+        }
+    }
     printf("http://127.0.0.1:%d\n", a.cfg.port);
     fflush(stdout);
+#ifdef SYMBIOSIC_DESKTOP
+    if (!headless && !status && !desktop_run(&a, &error)) {
+        fprintf(stderr, "symbiosic: %s\n", error);
+        free(error);
+        app_shutdown(&a);
+        status = 1;
+    }
+#endif
     uv_run(&a.loop, UV_RUN_DEFAULT);
     uv_loop_close(&a.loop);
     app_destroy(&a);
-    return 0;
+    return status;
 }
 #endif
