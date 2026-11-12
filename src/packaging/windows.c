@@ -1,4 +1,6 @@
+#ifndef UNICODE
 #define UNICODE
+#endif
 #define _UNICODE
 #include <windows.h>
 #include <shellapi.h>

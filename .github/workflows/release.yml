@@ -77,7 +77,10 @@ jobs:
           cp .deps/tiktoken_c.dll .
           python tests/http_test.py
           python scripts/package.py windows-x86_64
-          python tests/package_test.py dist/symbiosic-windows-x86_64.zip
+      - name: Windows package smoke test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python src/tests/package_test.py src/dist/symbiosic-windows-x86_64.zip
       - uses: actions/setup-node@v4
         if: runner.os == 'Linux'
         with:

@@ -79,6 +79,8 @@ python3 scripts/package.py macos-arm64
 # Other native hosts: macos-x86_64, linux-x86_64, windows-x86_64
 ```
 
+Test the Windows ZIP from native PowerShell Python, outside MSYS. This checks the bundled runtime independently.
+
 Outputs and SHA-256 files go to `dist/`. Build on each target architecture. macOS uses an `.app` inside a DMG; Linux uses a portable archive with a desktop installer; Windows uses a portable executable and bundled runtime DLLs. macOS packages use ad-hoc signatures; Apple signing/notarization requires developer credentials.
 
 [Release workflow](../.github/workflows/release.yml) builds and tests all four targets. Push a `v*` tag to publish only after every target passes. `workflow_dispatch` builds downloadable CI artifacts without publishing.
