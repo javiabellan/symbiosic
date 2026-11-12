@@ -220,12 +220,12 @@ static void ai_done(uv_work_t *w, int status) {
         persist_job(a, t->job);
     }
     if (t->kind == TASK_DIRECTORY) {
-        t->reply(t->reply_ctx, t->result ? HTTP_OK : HTTP_BAD_REQUEST,
+        t->reply(t->reply_ctx, t->result ? STATUS_OK : STATUS_BAD_REQUEST,
                  t->result ? doc_clone(t->result)
                            : error_doc("directory_unavailable",
                                        t->error ? t->error : "Directory unavailable"));
     } else if (t->kind == TASK_MODELS) {
-        t->reply(t->reply_ctx, t->result ? HTTP_OK : HTTP_BAD_GATEWAY,
+        t->reply(t->reply_ctx, t->result ? STATUS_OK : STATUS_BAD_GATEWAY,
                  t->result
                      ? doc_clone(t->result)
                      : error_doc("models_failed", t->error ? t->error : "Unable to load models"));
@@ -246,9 +246,9 @@ static void ai_done(uv_work_t *w, int status) {
                 yyjson_mut_obj_remove_str(e, "evidence");
                 yyjson_mut_obj_remove_str(get(e, "coverage"), "input_event_ids");
             }
-            t->reply(t->reply_ctx, HTTP_OK, preview);
+            t->reply(t->reply_ctx, STATUS_OK, preview);
         } else {
-            t->reply(t->reply_ctx, HTTP_SERVER_ERROR,
+            t->reply(t->reply_ctx, STATUS_SERVER_ERROR,
                      error_doc("estimate_failed", t->error ? t->error : "Unable to build quote"));
         }
     } else {
@@ -370,7 +370,7 @@ static Doc *job_ack(const char *id) {
     return d;
 }
 Doc *start_analysis(App *a, const char *id, int *status) {
-    *status = HTTP_ACCEPTED;
+    *status = STATUS_ACCEPTED;
     for (size_t i = 0; i < a->jobs.n; i++) {
         if (!strcmp(sget(root(a->jobs.v[i]), "quote_id"), id)) {
             return job_ack(sget(root(a->jobs.v[i]), "id"));
@@ -378,21 +378,21 @@ Doc *start_analysis(App *a, const char *id, int *status) {
     }
     Doc *quote = docs_find(&a->quotes, "id", id);
     if (!quote) {
-        *status = HTTP_NOT_FOUND;
+        *status = STATUS_NOT_FOUND;
         return error_doc("not_found", "Quote not found");
     }
     if (integer(get(root(quote), "expires_at_epoch")) <= (int64_t)time(NULL)) {
-        *status = HTTP_CONFLICT;
+        *status = STATUS_CONFLICT;
         return error_doc("expired_quote", "Quote expired; refresh the estimate");
     }
     if (strcmp(sget(root(quote), "engine"), "symbiosic-v1") ||
         yyjson_mut_arr_size(get(root(quote), "entries")) != 1) {
-        *status = HTTP_BAD_REQUEST;
+        *status = STATUS_BAD_REQUEST;
         return error_doc("retired_estimate",
                          "Create a new estimate for exactly one trace or directory");
     }
     if (!strcmp(sget(root(quote), "domain"), "auto") && !*a->cfg.key) {
-        *status = HTTP_CONFLICT;
+        *status = STATUS_CONFLICT;
         return error_doc("missing_key", "Automatic domain detection requires an OpenAI API key");
     }
     Provider quoted_provider;
@@ -400,13 +400,13 @@ Doc *start_analysis(App *a, const char *id, int *status) {
         quoted_provider = AI_OPENAI;
     }
     if (!*provider_key(&a->cfg, quoted_provider) && integer(get(root(quote), "eligible"))) {
-        *status = HTTP_CONFLICT;
+        *status = STATUS_CONFLICT;
         return error_doc("missing_key",
                          "Selected provider API key is missing; paid operations are disabled");
     }
     char job_id[33];
     if (!new_id(job_id)) {
-        *status = HTTP_SERVER_ERROR;
+        *status = STATUS_SERVER_ERROR;
         return error_doc("random_failed", "Unable to generate job ID");
     }
     Doc *job = doc_new();
@@ -424,7 +424,7 @@ Doc *start_analysis(App *a, const char *id, int *status) {
     put(job, r, "tokens_estimated", copy(job, get(root(quote), "tokens_estimated")));
     char *e = NULL;
     if (!save_doc(a, "jobs", job_id, job, &e)) {
-        *status = HTTP_SERVER_ERROR;
+        *status = STATUS_SERVER_ERROR;
         Doc *err = error_doc("persistence_failed", e);
         free(e);
         doc_free(job);
@@ -469,14 +469,14 @@ static bool valid_scope(App *a, J *scope) {
     return false;
 }
 Doc *create_chat(App *a, J *scope, int *status) {
-    *status = HTTP_OK;
+    *status = STATUS_OK;
     if (!valid_scope(a, scope)) {
-        *status = HTTP_BAD_REQUEST;
+        *status = STATUS_BAD_REQUEST;
         return error_doc("bad_scope", "Choose an existing trace, exact directory, or all scope");
     }
     char id[33];
     if (!new_id(id)) {
-        *status = HTTP_SERVER_ERROR;
+        *status = STATUS_SERVER_ERROR;
         return error_doc("random_failed", "Unable to generate chat ID");
     }
     Doc *d = doc_new();
@@ -490,7 +490,7 @@ Doc *create_chat(App *a, J *scope, int *status) {
     free(now);
     char *err = NULL;
     if (!save_doc(a, "chats", id, d, &err)) {
-        *status = HTTP_SERVER_ERROR;
+        *status = STATUS_SERVER_ERROR;
         doc_free(d);
         Doc *e = error_doc("persistence_failed", err);
         free(err);
@@ -502,10 +502,10 @@ Doc *create_chat(App *a, J *scope, int *status) {
     return result;
 }
 Doc *start_chat(App *a, const char *id, const char *text, int *status) {
-    *status = HTTP_ACCEPTED;
+    *status = STATUS_ACCEPTED;
     Doc *chat = docs_find(&a->chats, "id", id);
     if (!chat) {
-        *status = HTTP_NOT_FOUND;
+        *status = STATUS_NOT_FOUND;
         return error_doc("not_found", "Chat not found");
     }
     Doc *associated_analysis = analysis_for_scope(a, get(root(chat), "scope"));
@@ -514,7 +514,7 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status) {
         provider_parse(sget(root(associated_analysis), "ai_provider"), &chat_provider);
     }
     if (!*provider_key(&a->cfg, chat_provider)) {
-        *status = HTTP_CONFLICT;
+        *status = STATUS_CONFLICT;
         return error_doc("missing_key",
                          "Selected provider API key is missing; chat has separate paid API usage");
     }
@@ -522,7 +522,7 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status) {
     Doc *prev = docs_find(&a->jobs, "id", last);
     if (prev && (!strcmp(sget(root(prev), "state"), "running") ||
                  !strcmp(sget(root(prev), "state"), "queued"))) {
-        *status = HTTP_CONFLICT;
+        *status = STATUS_CONFLICT;
         return error_doc("chat_busy", "This chat already has a turn in flight");
     }
     Task *t = xcalloc(1, sizeof(*t));
@@ -531,7 +531,7 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status) {
     t->text = xstrdup(text);
     char *err = NULL;
     if (!snapshot_take(a, get(root(chat), "scope"), &t->snapshot, &err)) {
-        *status = HTTP_TOO_LARGE;
+        *status = STATUS_TOO_LARGE;
         Doc *e = error_doc("scope_too_large", err);
         free(err);
         task_free(t);
@@ -540,7 +540,7 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status) {
     char job_id[33];
     if (!new_id(job_id)) {
         task_free(t);
-        *status = HTTP_SERVER_ERROR;
+        *status = STATUS_SERVER_ERROR;
         return error_doc("random_failed", "Unable to create job ID");
     }
     t->job = doc_new();
@@ -550,7 +550,7 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status) {
     put(t->job, j, "chat_id", js(t->job, id));
     put(t->job, j, "state", js(t->job, "queued"));
     if (!save_doc(a, "jobs", job_id, t->job, &err)) {
-        *status = HTTP_SERVER_ERROR;
+        *status = STATUS_SERVER_ERROR;
         Doc *e = error_doc("persistence_failed", err);
         free(err);
         task_free(t);
@@ -572,7 +572,7 @@ Doc *start_chat(App *a, const char *id, const char *text, int *status) {
         put(t->job, j, "error", js(t->job, err));
         persist_job(a, t->job);
         docs_push(&a->jobs, doc_clone(t->job));
-        *status = HTTP_SERVER_ERROR;
+        *status = STATUS_SERVER_ERROR;
         Doc *e = error_doc("persistence_failed", err);
         free(err);
         task_free(t);
@@ -663,7 +663,7 @@ void app_shutdown(App *a) {
             docs_replace(&a->jobs, "id", doc_clone(t->job));
         }
         if (t->reply) {
-            t->reply(t->reply_ctx, HTTP_UNAVAILABLE,
+            t->reply(t->reply_ctx, STATUS_UNAVAILABLE,
                      error_doc("shutting_down", "Application is stopping"));
         }
         task_free(t);

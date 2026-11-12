@@ -133,14 +133,14 @@ char *prompt_render(App *a, const char *name, J *vars, char **error) {
 }
 Doc *domains_update(App *a, J *in, int *status) {
     if (a->ai_busy || a->head) {
-        *status = HTTP_CONFLICT;
+        *status = STATUS_CONFLICT;
         return error_doc("ai_busy", "Wait for AI work to finish before editing prompts");
     }
     const char *id = sget(in, "id"), *name = sget(in, "name"),
                *detect = sget(in, "detection_prompt"), *prompt = sget(in, "analysis_prompt");
     if (!prompt_id(id) || !*name || strlen(name) > 100 || !*detect || !*prompt ||
         strlen(detect) > 2000 || strlen(prompt) > 10000) {
-        *status = HTTP_BAD_REQUEST;
+        *status = STATUS_BAD_REQUEST;
         return error_doc("bad_domain", "Use an identifier, a name, a detection description and an "
                                        "analysis prompt (up to 10,000 bytes)");
     }
@@ -162,11 +162,11 @@ Doc *domains_update(App *a, J *in, int *status) {
     if (!ok) {
         Doc *d = error_doc("save_failed", error);
         free(error);
-        *status = HTTP_SERVER_ERROR;
+        *status = STATUS_SERVER_ERROR;
         return d;
     }
     put(a->domains, root(a->domains), id, copy(a->domains, in));
     a->catalog_revision++;
-    *status = HTTP_OK;
+    *status = STATUS_OK;
     return doc_clone(a->domains);
 }

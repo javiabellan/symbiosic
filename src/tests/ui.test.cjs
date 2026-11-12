@@ -72,6 +72,10 @@ async function open(width = 1440) {
   });
   await page.goto(url);
   await page.locator(".trace-header h1").waitFor();
+  if (process.env.SCREENSHOT_DIR && [390, 1440].includes(width)) {
+    fs.mkdirSync(process.env.SCREENSHOT_DIR, {recursive: true});
+    await page.screenshot({path: path.join(process.env.SCREENSHOT_DIR, `workspace-${width}.png`), fullPage: true});
+  }
   return { page, errors };
 }
 test("previews use the workspace; Settings is the only dialog", async () => {

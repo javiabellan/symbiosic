@@ -66,16 +66,16 @@ static void send_bytes(Conn *c, int status, const char *type, const char *body) 
     }
     c->responded = true;
     uv_read_stop((uv_stream_t *)&c->tcp);
-    const char *reason = status == HTTP_OK            ? "OK"
-                         : status == HTTP_ACCEPTED    ? "Accepted"
-                         : status == HTTP_BAD_REQUEST ? "Bad Request"
-                         : status == HTTP_FORBIDDEN   ? "Forbidden"
-                         : status == HTTP_NOT_FOUND   ? "Not Found"
-                         : status == HTTP_CONFLICT    ? "Conflict"
-                         : status == HTTP_TOO_LARGE   ? "Content Too Large"
-                         : status == HTTP_MEDIA_TYPE  ? "Unsupported Media Type"
-                         : status == HTTP_BAD_GATEWAY ? "Bad Gateway"
-                         : status == HTTP_UNAVAILABLE ? "Service Unavailable"
+    const char *reason = status == STATUS_OK            ? "OK"
+                         : status == STATUS_ACCEPTED    ? "Accepted"
+                         : status == STATUS_BAD_REQUEST ? "Bad Request"
+                         : status == STATUS_FORBIDDEN   ? "Forbidden"
+                         : status == STATUS_NOT_FOUND   ? "Not Found"
+                         : status == STATUS_CONFLICT    ? "Conflict"
+                         : status == STATUS_TOO_LARGE   ? "Content Too Large"
+                         : status == STATUS_MEDIA_TYPE  ? "Unsupported Media Type"
+                         : status == STATUS_BAD_GATEWAY ? "Bad Gateway"
+                         : status == STATUS_UNAVAILABLE ? "Service Unavailable"
                                                       : "Internal Server Error";
     c->response =
         fmt("HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: "
@@ -121,7 +121,7 @@ static void header_commit(Conn *c) {
     }
     if (target) {
         if (*target) {
-            c->failure = HTTP_BAD_REQUEST;
+            c->failure = STATUS_BAD_REQUEST;
         } else {
             *target = xstrdup(c->value.s ? c->value.s : "");
         }
@@ -133,7 +133,7 @@ static void header_commit(Conn *c) {
 static int on_url(llhttp_t *p, const char *at, size_t n) {
     Conn *c = p->data;
     if (c->url.n + n > 2048) {
-        c->failure = HTTP_TOO_LARGE;
+        c->failure = STATUS_TOO_LARGE;
         return HPE_USER;
     }
     buf_addn(&c->url, at, n);
@@ -143,7 +143,7 @@ static int on_field(llhttp_t *p, const char *at, size_t n) {
     Conn *c = p->data;
     c->parsed_header_bytes += n;
     if (c->parsed_header_bytes > 8192) {
-        c->failure = HTTP_TOO_LARGE;
+        c->failure = STATUS_TOO_LARGE;
         return HPE_USER;
     }
     if (c->value_seen) {
@@ -156,7 +156,7 @@ static int on_value(llhttp_t *p, const char *at, size_t n) {
     Conn *c = p->data;
     c->parsed_header_bytes += n;
     if (c->parsed_header_bytes > 8192) {
-        c->failure = HTTP_TOO_LARGE;
+        c->failure = STATUS_TOO_LARGE;
         return HPE_USER;
     }
     c->value_seen = true;
@@ -167,7 +167,7 @@ static int on_headers(llhttp_t *p) {
     Conn *c = p->data;
     header_commit(c);
     if (p->content_length > 16384) {
-        c->failure = HTTP_TOO_LARGE;
+        c->failure = STATUS_TOO_LARGE;
         return HPE_USER;
     }
     return 0;
@@ -175,7 +175,7 @@ static int on_headers(llhttp_t *p) {
 static int on_body(llhttp_t *p, const char *at, size_t n) {
     Conn *c = p->data;
     if (c->body.n + n > 16384) {
-        c->failure = HTTP_TOO_LARGE;
+        c->failure = STATUS_TOO_LARGE;
         return HPE_USER;
     }
     buf_addn(&c->body, at, n);
@@ -213,7 +213,7 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
             c->header_done = true;
         }
         if (c->header_bytes > 8192) {
-            c->failure = HTTP_TOO_LARGE;
+            c->failure = STATUS_TOO_LARGE;
             break;
         }
     }
@@ -221,9 +221,9 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         c->failure ? HPE_USER : llhttp_execute(&c->parser, buf->base, (size_t)nread);
     free(buf->base);
     if (c->failure || (!c->complete && result != HPE_OK)) {
-        reject(c, c->failure ? c->failure : HTTP_BAD_REQUEST,
-               c->failure == HTTP_TOO_LARGE ? "too_large" : "bad_http",
-               c->failure == HTTP_TOO_LARGE ? "Headers exceed 8 KiB or API body exceeds 16 KiB"
+        reject(c, c->failure ? c->failure : STATUS_BAD_REQUEST,
+               c->failure == STATUS_TOO_LARGE ? "too_large" : "bad_http",
+               c->failure == STATUS_TOO_LARGE ? "Headers exceed 8 KiB or API body exceeds 16 KiB"
                                             : "Malformed HTTP request");
         return;
     }
@@ -234,7 +234,7 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     snprintf(host, sizeof(host), "127.0.0.1:%d", c->app->cfg.port);
     snprintf(origin, sizeof(origin), "http://%s", host);
     if (!c->host || strcmp(c->host, host) || (c->origin && strcmp(c->origin, origin))) {
-        reject(c, HTTP_FORBIDDEN, "origin_rejected",
+        reject(c, STATUS_FORBIDDEN, "origin_rejected",
                "Only the exact configured local Host and Origin are accepted");
         return;
     }
@@ -242,15 +242,15 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     if (!strcmp(method, "POST") &&
         (!c->content_type || strncmp(c->content_type, "application/json", 16) ||
          (c->content_type[16] && c->content_type[16] != ';'))) {
-        reject(c, HTTP_MEDIA_TYPE, "content_type", "POST requests require application/json");
+        reject(c, STATUS_MEDIA_TYPE, "content_type", "POST requests require application/json");
         return;
     }
     if (c->app->stopping) {
-        reject(c, HTTP_UNAVAILABLE, "shutting_down", "Application is stopping");
+        reject(c, STATUS_UNAVAILABLE, "shutting_down", "Application is stopping");
         return;
     }
     if (!strcmp(method, "GET") && !strcmp(c->url.s, "/")) {
-        send_bytes(c, HTTP_OK, "text/html; charset=utf-8", c->app->html);
+        send_bytes(c, STATUS_OK, "text/html; charset=utf-8", c->app->html);
         return;
     }
     /* Only named UI assets are served; URL paths never become filesystem paths. */
@@ -267,9 +267,9 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         char *error = NULL;
         char *asset = read_file(assets[i].path, MAX_SCHEMA_BYTES, NULL, &error);
         if (asset) {
-            send_bytes(c, HTTP_OK, assets[i].type, asset);
+            send_bytes(c, STATUS_OK, assets[i].type, asset);
         } else {
-            reject(c, HTTP_SERVER_ERROR, "missing_asset", "UI asset unavailable");
+            reject(c, STATUS_SERVER_ERROR, "missing_asset", "UI asset unavailable");
         }
 
         free(asset);
@@ -427,9 +427,9 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
                void *ctx) {
     char *path = xstrdup(url);
     Doc *query = query_parse(path), *input = NULL, *out = NULL;
-    int status = HTTP_OK;
+    int status = STATUS_OK;
     if (!query) {
-        status = HTTP_BAD_REQUEST;
+        status = STATUS_BAD_REQUEST;
         out = error_doc("bad_query", "Malformed query string");
         goto done;
     }
@@ -438,7 +438,7 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
     if (post) {
         input = doc_parse(body, strlen(body));
         if (!input || !yyjson_mut_is_obj(root(input))) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             out = error_doc("bad_json", "Expected a JSON object");
             goto done;
         }
@@ -453,7 +453,7 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
     } else if (get_method && (!strcmp(path, "/api/directory") || !strcmp(path, "/api/file"))) {
         size_t offset;
         if (!directory_allowed(a, sget(q, "cwd")) || !query_int(q, "offset", 0, &offset)) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             out = error_doc("bad_directory", "Select a known working directory and valid offset");
         } else {
             Doc *sel = doc_clone(query);
@@ -480,7 +480,7 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
     } else if (get_method && !strcmp(path, "/api/models")) {
         Provider provider;
         if (!provider_parse(sget(q, "provider"), &provider)) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             out = error_doc("bad_provider", "Unknown AI provider");
         } else {
             enqueue_models(a, provider, send, ctx);
@@ -494,13 +494,13 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
         const char *id = sget(q, "id");
         if (!valid_id(id) || !query_int(q, "start_seq", 0, &start) ||
             !query_int(q, "limit", 25, &limit) || !query_int(q, "text_offset", 0, &offset)) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             out = error_doc("bad_arguments", "Invalid trace ID or pagination");
             goto done;
         }
         Trace *t = trace_find(&a->traces, id);
         if (!t) {
-            status = HTTP_NOT_FOUND;
+            status = STATUS_NOT_FOUND;
             out = error_doc("not_found", "Trace not found");
             goto done;
         }
@@ -510,7 +510,7 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
             out = events_page(t, start, limit, offset);
         }
         if (get(root(out), "error")) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             goto done;
         }
         put(out, root(out), "meta", copy(out, get(root(t->doc), "meta")));
@@ -524,7 +524,7 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
             (directory
                  ? yyjson_mut_arr_size(ids) != 0 || !directory_allowed(a, sget(in, "cwd"))
                  : yyjson_mut_arr_size(ids) != 1 || !valid_id(str(yyjson_mut_arr_get(ids, 0))))) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             out = error_doc(
                 "single_item_required",
                 "Choose exactly one trace or a known directory. Batch analysis is unavailable.");
@@ -537,14 +537,14 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
         return;
     } else if (post && !strcmp(path, "/api/analyze")) {
         if (!valid_id(sget(in, "quote_id"))) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             out = error_doc("bad_arguments", "Invalid quote_id");
         } else {
             out = start_analysis(a, sget(in, "quote_id"), &status);
         }
     } else if (get_method && !strcmp(path, "/api/job")) {
         if (!valid_id(sget(q, "id"))) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             out = error_doc("bad_arguments", "Invalid job ID");
         } else {
             Doc *d = docs_find(&a->jobs, "id", sget(q, "id"));
@@ -555,7 +555,7 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
                 J *r;
                 yyjson_mut_arr_foreach(rows, i, n, r) yyjson_mut_obj_remove_str(r, "raw_response");
             } else {
-                status = HTTP_NOT_FOUND;
+                status = STATUS_NOT_FOUND;
                 out = error_doc("not_found", "Job not found");
             }
         }
@@ -563,14 +563,14 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
         out = create_chat(a, get(in, "scope"), &status);
     } else if (get_method && !strcmp(path, "/api/chat")) {
         if (!valid_id(sget(q, "id"))) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             out = error_doc("bad_arguments", "Invalid chat ID");
         } else {
             Doc *d = docs_find(&a->chats, "id", sget(q, "id"));
             if (d) {
                 out = public_chat(d);
             } else {
-                status = HTTP_NOT_FOUND;
+                status = STATUS_NOT_FOUND;
                 out = error_doc("not_found", "Chat not found");
             }
         }
@@ -589,14 +589,14 @@ void api_route(App *a, const char *method, const char *url, const char *body, Re
     } else if (post && !strcmp(path, "/api/chat/message")) {
         if (!valid_id(sget(in, "chat_id")) || !yyjson_mut_is_str(get(in, "text")) ||
             !*sget(in, "text") || strlen(sget(in, "text")) > 12000) {
-            status = HTTP_BAD_REQUEST;
+            status = STATUS_BAD_REQUEST;
             out = error_doc("bad_arguments",
                             "Send a valid chat_id and question of 1–12,000 UTF-8 bytes");
         } else {
             out = start_chat(a, sget(in, "chat_id"), sget(in, "text"), &status);
         }
     } else {
-        status = HTTP_NOT_FOUND;
+        status = STATUS_NOT_FOUND;
         out = error_doc("not_found", "No such fixed route");
     }
 done:

@@ -75,7 +75,7 @@ Transport provider_http(Config *cfg, Provider provider, const char *endpoint, co
         t.error = fmt("Provider transport failed (%s); outcome unknown. No automatic retry.",
                       curl_easy_strerror(code));
         t.ambiguous = true;
-    } else if (status < HTTP_OK || status >= HTTP_REDIRECT) { /* Do not echo provider text: it may
+    } else if (status < STATUS_OK || status >= STATUS_REDIRECT) { /* Do not echo provider text: it may
                                                                  quote input or credentials. */
         t.error = fmt("Provider HTTP %ld; check model availability, key permissions, quota and "
                       "request settings. No retry was made.",

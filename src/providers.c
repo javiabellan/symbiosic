@@ -449,7 +449,7 @@ bool model_config_parse(J *v, ModelConfig *m) {
         return false;
     }
     if (!provider_parse(sget(v, "provider"), &m->provider) || !*sget(v, "model") ||
-        strlen(sget(v, "model")) > HTTP_OK) {
+        strlen(sget(v, "model")) > STATUS_OK) {
         return false;
     }
     const char *fields[] = {"input_limit", "context_limit", "output_limit"};
@@ -484,7 +484,7 @@ static bool apply_settings(Config *c, J *in) {
 }
 Doc *ai_settings_update(App *a, J *in, bool connection, int *status) {
     if (a->ai_busy || a->head) {
-        *status = HTTP_CONFLICT;
+        *status = STATUS_CONFLICT;
         return error_doc("ai_busy", "Wait for queued AI work to finish before changing settings");
     }
     if (connection) {
@@ -492,7 +492,7 @@ Doc *ai_settings_update(App *a, J *in, bool connection, int *status) {
         const char *key = sget(in, "key");
         if (!provider_parse(sget(in, "provider"), &p) || !yyjson_mut_is_str(get(in, "key")) ||
             strlen(key) > 4096 || strchr(key, '\r') || strchr(key, '\n')) {
-            *status = HTTP_BAD_REQUEST;
+            *status = STATUS_BAD_REQUEST;
             return error_doc("bad_settings", "Invalid provider or API key");
         }
         char **dest = p == AI_OPENAI ? &a->cfg.key : &a->cfg.provider_keys[p];
@@ -505,7 +505,7 @@ Doc *ai_settings_update(App *a, J *in, bool connection, int *status) {
             !yyjson_mut_is_num(get(in, "decision_input_usd_per_m")) ||
             !isfinite(number(get(in, "decision_input_usd_per_m"))) ||
             number(get(in, "decision_input_usd_per_m")) < 0) {
-            *status = HTTP_BAD_REQUEST;
+            *status = STATUS_BAD_REQUEST;
             return error_doc("bad_settings", "Set a model, provider input/context limits, output "
                                              "reserve, and nonnegative input rate for both roles");
         }
@@ -522,7 +522,7 @@ Doc *ai_settings_update(App *a, J *in, bool connection, int *status) {
         free(path);
         free(bytes);
         if (!ok) {
-            *status = HTTP_SERVER_ERROR;
+            *status = STATUS_SERVER_ERROR;
             Doc *d = error_doc("save_failed", error);
             free(error);
             doc_free(saved);
@@ -532,7 +532,7 @@ Doc *ai_settings_update(App *a, J *in, bool connection, int *status) {
         doc_free(saved);
     }
     a->catalog_revision++;
-    *status = HTTP_OK;
+    *status = STATUS_OK;
     return ai_settings(a);
 }
 bool ai_settings_load(App *a, char **error) {
