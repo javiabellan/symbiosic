@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 static const char *names[] = {"openai", "anthropic", "openrouter", "gemini"};
+static const char *const REASONING_STATE = "reasoning.encrypted_content";
 const char *provider_name(Provider p) {
     return p < AI_PROVIDERS ? names[p] : "unknown";
 }
@@ -58,6 +59,26 @@ Doc *provider_request(Config *c, ModelRole decision, J *request, const char **en
         Doc *d = doc_new();
         yyjson_mut_doc_set_root(d, copy(d, request));
         *endpoint = decision ? "decisions" : "responses";
+        if (!decision) {
+            /* Stateless tool rounds need the encrypted state returned by Responses. */
+            J *include = get(root(d), "include");
+            if (!include) {
+                include = arr(d);
+                put(d, root(d), "include", include);
+            }
+            size_t i, n;
+            J *value;
+            bool present = false;
+            yyjson_mut_arr_foreach(include, i, n, value) {
+                if (!strcmp(str(value), REASONING_STATE)) {
+                    present = true;
+                    break;
+                }
+            }
+            if (!present) {
+                add(include, js(d, REASONING_STATE));
+            }
+        }
         if (!decision && (strcmp(sget(get(request, "reasoning"), "effort"), "default") == 0 ||
                           (strncmp(id, "gpt-6", 5) && strncmp(id, "gpt-5", 5) &&
                            strncmp(id, "o1", 2) && strncmp(id, "o3", 2) && strncmp(id, "o4", 2)))) {

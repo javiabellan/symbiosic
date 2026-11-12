@@ -40,6 +40,10 @@ static void test_provider_replay(App *a) {
             add(input, result);
         }
         Doc *wire = provider_request(&a->cfg, MODEL_GENERATION, root(request), &endpoint);
+        if (p == AI_OPENAI) {
+            CHECK(!strcmp(str(yyjson_mut_arr_get(get(root(wire), "include"), 0)),
+                          "reasoning.encrypted_content"));
+        }
         J *messages = get(root(wire), p == AI_OPENAI ? "input" : "messages");
         J *native = yyjson_mut_arr_get(messages, p == AI_OPENAI ? 0 : p == AI_ANTHROPIC ? 0 : 1);
         J *expected = p == AI_OPENAI ? yyjson_mut_arr_get(get(root(raw), "output"), 0)
