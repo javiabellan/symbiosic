@@ -11,6 +11,7 @@ LDLIBS += $(BASE_LIBS) $(shell $(PKG_CONFIG) --libs libllhttp 2>/dev/null || ech
 TIKTOKEN_DIR ?= .deps
 CPPFLAGS += -I$(TIKTOKEN_DIR)
 LDLIBS += $(TIKTOKEN_DIR)/libtiktoken_c.a $(if $(filter Darwin,$(shell uname -s)),-liconv,-ldl -lpthread)
+LDLIBS += $(if $(filter MSYS% CYGWIN%,$(shell uname -s)),-ladvapi32,)
 SOURCES = prompts.c directory.c review.c fidelity.c providers.c util.c store.c normalize.c query.c ai.c chat.c main.c http.c
 OBJECTS = $(SOURCES:.c=.o)
 .PHONY: all test clean sanitize deps

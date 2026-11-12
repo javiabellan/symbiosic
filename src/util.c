@@ -8,6 +8,9 @@
 #include <errno.h>
 #include <math.h>
 #include <time.h>
+#if defined(__MSYS__) || defined(__CYGWIN__)
+#include <sys/cygwin.h>
+#endif
 
 static void oom(void) {
     fputs("symbiosic: allocation failed; exiting without replacing unfinished files\n", stderr);
@@ -306,6 +309,25 @@ char *absolute_path(const char *p) {
     } else {
         expanded = xstrdup(p);
     }
+#if defined(__MSYS__) || defined(__CYGWIN__)
+    /* Native Windows transcripts record drive paths; map them into the POSIX runtime. */
+    if ((isalpha((unsigned char)expanded[0]) && expanded[1] == ':') ||
+        (expanded[0] == '\\' && expanded[1] == '\\')) {
+        ssize_t size = cygwin_conv_path(CCP_WIN_A_TO_POSIX, expanded, NULL, 0);
+        if (size < 0) {
+            free(expanded);
+            return xstrdup("");
+        }
+        char *converted = xmalloc((size_t)size);
+        int result = cygwin_conv_path(CCP_WIN_A_TO_POSIX, expanded, converted, (size_t)size);
+        free(expanded);
+        if (result) {
+            free(converted);
+            return xstrdup("");
+        }
+        expanded = converted;
+    }
+#endif
     char *full;
     if (expanded[0] != '/') {
         char cwd[4096];
@@ -334,6 +356,11 @@ char *absolute_path(const char *p) {
         parts[n++] = q;
     }
     Buf b = {0};
+#if defined(__MSYS__) || defined(__CYGWIN__)
+    if (full[0] == '/' && full[1] == '/') {
+        buf_add(&b, "/");
+    }
+#endif
     buf_add(&b, "/");
     for (size_t i = 0; i < n; i++) {
         if (i) {

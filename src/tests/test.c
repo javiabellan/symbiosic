@@ -8,6 +8,13 @@
 #include <math.h>
 #include <time.h>
 
+#if defined(__MSYS__) || defined(__CYGWIN__)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <aclapi.h>
+#include <sys/cygwin.h>
+#endif
+
 static int checks = 0, calls = 0, chat_round = 0, mode = 0;
 static char *sent_body;
 static char cited_id[33];
@@ -19,6 +26,33 @@ static char cited_id[33];
             exit(1);                                                                               \
         }                                                                                          \
     } while (0)
+#if defined(__MSYS__) || defined(__CYGWIN__)
+static void test_windows_acl(App *a) {
+    char *path = fmt("%s/ai-settings.json", a->cfg.data_dir);
+    wchar_t *native = cygwin_create_path(CCP_POSIX_TO_WIN_W, path);
+    PACL acl = NULL;
+    PSECURITY_DESCRIPTOR descriptor = NULL;
+    CHECK(GetNamedSecurityInfoW(native, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &acl,
+                                NULL, &descriptor) == ERROR_SUCCESS);
+    CHECK(acl && acl->AceCount == 1);
+    ACCESS_ALLOWED_ACE *ace = NULL;
+    CHECK(GetAce(acl, 0, (void **)&ace));
+    CHECK(ace->Header.AceType == ACCESS_ALLOWED_ACE_TYPE);
+    HANDLE token;
+    CHECK(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token));
+    DWORD size = 0;
+    GetTokenInformation(token, TokenUser, NULL, 0, &size);
+    TOKEN_USER *user = xmalloc(size);
+    CHECK(GetTokenInformation(token, TokenUser, user, size, &size));
+    CHECK(EqualSid(&ace->SidStart, user->User.Sid));
+    free(user);
+    CloseHandle(token);
+    LocalFree(descriptor);
+    free(native);
+    free(path);
+}
+#endif
+
 static J *meta(Trace *t) {
     return get(root(t->doc), "meta");
 }
@@ -715,6 +749,14 @@ int main(void) {
     char *normalized = absolute_path("/a//b/./c/../");
     CHECK(!strcmp(normalized, "/a/b"));
     free(normalized);
+#if defined(__MSYS__) || defined(__CYGWIN__)
+    char *native_path = absolute_path("C:\\work\\app\\..\\repo");
+    char *slash_path = absolute_path("C:/work/repo");
+    CHECK(!strcmp(native_path, slash_path));
+    CHECK(native_path[0] == '/' && strstr(native_path, "/work/repo"));
+    free(native_path);
+    free(slash_path);
+#endif
     double seconds;
     CHECK(timestamp("2026-11-08T10:00:00+01:00", &seconds));
     CHECK(!timestamp("2026-02-30T00:00:00Z", &seconds));
@@ -723,6 +765,9 @@ int main(void) {
     test_tools(&a);
     test_fidelity(&a);
     test_providers(&a);
+#if defined(__MSYS__) || defined(__CYGWIN__)
+    test_windows_acl(&a);
+#endif
     test_provider_replay(&a);
     test_native_titles(&a);
     test_catalog(&a);

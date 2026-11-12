@@ -8,6 +8,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -128,7 +129,9 @@ with tempfile.TemporaryDirectory(prefix="symbiosic-http-") as temporary:
         check(request("POST", "/api/settings", settings)[0] == 200, "Save model limits")
         saved_settings = (data / "ai-settings.json").read_text()
         check("test-session-only" not in saved_settings, "Session keys are never persisted")
-        check((data / "ai-settings.json").stat().st_mode & 0o777 == 0o600, "Private model settings")
+        # NTFS ACLs are checked by the C suite; MSYS noacl stat bits are synthetic.
+        if not sys.platform.startswith(("msys", "cygwin")):
+            check((data / "ai-settings.json").stat().st_mode & 0o777 == 0o600, "Private model settings")
         check(request("GET", "/.env")[0] == 404, "No arbitrary files")
         check(request("GET", "/api/state", headers={"Host": "evil.example"})[0] == 403, "Host checked")
         check(request("POST", "/api/chat", {"scope": {"type": "all"}}, {"Origin": "https://evil.example"})[0] == 403, "Cross-origin mutation blocked")

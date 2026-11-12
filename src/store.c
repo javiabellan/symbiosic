@@ -7,6 +7,59 @@
 #include <unistd.h>
 #include <dirent.h>
 
+#if defined(__MSYS__) || defined(__CYGWIN__)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <aclapi.h>
+#include <sys/cygwin.h>
+
+/* MSYS noacl mounts ignore chmod; use an inheritable owner-only NTFS ACL. */
+static bool private_acl(const char *path, char **error) {
+    HANDLE token;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        *error = fmt("Cannot read Windows identity (%lu)", GetLastError());
+        return false;
+    }
+
+    DWORD size = 0;
+    GetTokenInformation(token, TokenUser, NULL, 0, &size);
+    TOKEN_USER *user = xmalloc(size);
+    if (!GetTokenInformation(token, TokenUser, user, size, &size)) {
+        *error = fmt("Cannot read Windows identity (%lu)", GetLastError());
+        CloseHandle(token);
+        free(user);
+        return false;
+    }
+    CloseHandle(token);
+
+    EXPLICIT_ACCESSW entry = {0};
+    entry.grfAccessPermissions = FILE_ALL_ACCESS;
+    entry.grfAccessMode = SET_ACCESS;
+    entry.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    entry.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    entry.Trustee.TrusteeType = TRUSTEE_IS_USER;
+    entry.Trustee.ptstrName = (LPWSTR)user->User.Sid;
+    PACL acl = NULL;
+    DWORD status = SetEntriesInAclW(1, &entry, NULL, &acl);
+    wchar_t *native = cygwin_create_path(CCP_POSIX_TO_WIN_W, path);
+    if (status == ERROR_SUCCESS && native) {
+        status = SetNamedSecurityInfoW(
+            native, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            NULL, NULL, acl, NULL);
+    } else if (!native) {
+        status = ERROR_INVALID_NAME;
+    }
+    free(native);
+    LocalFree(acl);
+    free(user);
+    if (status != ERROR_SUCCESS) {
+        *error = fmt("Cannot make Windows data private (%lu)", status);
+        return false;
+    }
+    return true;
+}
+#endif
+
 typedef enum { DOCS_FLAT, DOCS_NESTED } DocLayout;
 
 static void syserror(char **e, const char *what) {
@@ -83,7 +136,11 @@ bool mkdir_private(const char *path, char **error) {
         syserror(error, "Cannot make data directory private");
         return false;
     }
+#if defined(__MSYS__) || defined(__CYGWIN__)
+    return private_acl(path, error);
+#else
     return true;
+#endif
 }
 bool atomic_write(const char *path, const char *bytes, size_t n, char **error) {
     char *tmp = fmt("%s.tmp.XXXXXX", path);
