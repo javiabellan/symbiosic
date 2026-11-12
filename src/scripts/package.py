@@ -213,8 +213,15 @@ def windows(stage, out, target, binary):
     resource = stage/'icon.rc'
     icon_path = run('cygpath', '-m', icon).strip()
     resource.write_text('1 ICON "'+icon_path+'"\n')
-    run('/mingw64/bin/windres',resource,'-o',stage/'icon.o')
-    run('/mingw64/bin/gcc','-municode','-static',SRC/'packaging/windows.c',stage/'icon.o','-lshell32','-o',root/'Symbiosic.exe')
+    # Native binutils need native paths and the MinGW compiler on PATH.
+    os.environ['PATH'] = '/mingw64/bin:' + os.environ['PATH']
+    compiler = run('cygpath', '-m', '/mingw64/bin/gcc.exe').strip()
+    native_resource = run('cygpath', '-m', resource).strip()
+    native_object = run('cygpath', '-m', stage/'icon.o').strip()
+    native_source = run('cygpath', '-m', SRC/'packaging/windows.c').strip()
+    native_exe = run('cygpath', '-m', root/'Symbiosic.exe').strip()
+    run('/mingw64/bin/windres', '--preprocessor', compiler, '-O', 'coff', native_resource, '-o', native_object)
+    run('/mingw64/bin/gcc', '-municode', '-static', native_source, native_object, '-lshell32', '-o', native_exe)
     # Distribute MSYS package notices alongside the runtime.
     notices = Path('/usr/share/licenses')
     if notices.exists():
