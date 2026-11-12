@@ -702,7 +702,11 @@ int main(void) {
     setenv("CODEX_ROOT", codex, 1);
     setenv("OPENAI_API_KEY", "test-only", 1);
     App a;
-    CHECK(app_init(&a, &e));
+    bool initialized = app_init(&a, &e);
+    if (!initialized) {
+        fprintf(stderr, "app_init: %s\n", e ? e : "Unknown initialization error");
+    }
+    CHECK(initialized);
     test_transport = fake;
     char *cp = fmt("%s/main.jsonl", claude), *xp = fmt("%s/main.jsonl", codex);
     fixture("tests/fixtures/claude.jsonl", cp);

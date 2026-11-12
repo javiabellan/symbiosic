@@ -10,7 +10,11 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import zipfile
+
+ATTACH_TRIES = 5
+ATTACH_DELAY = 2
 
 artifact = Path(sys.argv[1]).resolve()
 with tempfile.TemporaryDirectory(prefix='symbiosic-bundle-') as temporary:
@@ -21,7 +25,14 @@ with tempfile.TemporaryDirectory(prefix='symbiosic-bundle-') as temporary:
         if artifact.suffix == '.dmg':
             mount = base/'mount'
             mount.mkdir()
-            subprocess.run(['hdiutil','attach',str(artifact),'-nobrowse','-readonly','-mountpoint',str(mount)],check=True,stdout=subprocess.DEVNULL)
+            # DiskImages may still hold the freshly created image on hosted macOS runners.
+            for attempt in range(ATTACH_TRIES):
+                result = subprocess.run(['hdiutil','attach',str(artifact),'-nobrowse','-readonly','-mountpoint',str(mount)],stdout=subprocess.DEVNULL)
+                if result.returncode == 0:
+                    break
+                if attempt == ATTACH_TRIES - 1:
+                    result.check_returncode()
+                time.sleep(ATTACH_DELAY)
             mounted = True
             root = mount/'Symbiosic.app/Contents/Resources'
         elif artifact.suffix == '.zip':

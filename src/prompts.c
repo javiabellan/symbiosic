@@ -6,6 +6,24 @@
 
 typedef enum { PROMPTS_REQUIRED, PROMPTS_OPTIONAL } PromptMode;
 
+/* Windows editors commonly save CRLF; prompt frontmatter uses logical newlines. */
+static char *read_prompt(const char *path, char **error) {
+    char *text = read_file(path, MAX_SCHEMA_BYTES, NULL, error);
+    if (!text) {
+        return NULL;
+    }
+
+    char *write = text;
+    for (char *read = text; *read; read++) {
+        if (*read == '\r' && read[1] == '\n') {
+            continue;
+        }
+        *write++ = *read;
+    }
+    *write = 0;
+    return text;
+}
+
 static bool prompt_id(const char *s) {
     if (!*s || strlen(s) > 64) {
         return false;
@@ -40,8 +58,7 @@ static bool load_domains(App *a, const char *path, PromptMode optional, char **e
             continue;
         }
         char *file = fmt("%s/%s", path, de->d_name);
-        size_t n;
-        char *text = read_file(file, MAX_SCHEMA_BYTES, &n, error);
+        char *text = read_prompt(file, error);
         free(file);
         if (!text) {
             closedir(dir);
@@ -76,8 +93,7 @@ bool prompts_load(App *a, char **error) {
     const char *names[] = {"trace", "directory", "detect", "chat", "review-chat"};
     for (size_t i = 0; i < sizeof(names) / sizeof(*names); i++) {
         char *path = fmt("prompts/%s.prompt", names[i]);
-        size_t n;
-        char *text = read_file(path, MAX_SCHEMA_BYTES, &n, error);
+        char *text = read_prompt(path, error);
         free(path);
         if (!text) {
             return false;
