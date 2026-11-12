@@ -128,8 +128,7 @@ static void ai_worker(uv_work_t *w) {
     Task *t = w->data;
     App *a = t->app;
     if (t->kind == TASK_DIRECTORY) {
-        App local = *a;
-        local.traces = t->snapshot.traces;
+        App local = {.cfg = {.data_dir = a->cfg.data_dir}, .traces = t->snapshot.traces};
         J *sel = root(t->selection);
         if (jbool(get(sel, "file"))) {
             t->result = directory_read(sget(sel, "cwd"), sget(sel, "path"),
@@ -219,12 +218,7 @@ static void ai_done(uv_work_t *w, int status) {
         put(t->job, root(t->job), "error", js(t->job, t->error));
         persist_job(a, t->job);
     }
-    if (t->kind == TASK_DIRECTORY) {
-        t->reply(t->reply_ctx, t->result ? STATUS_OK : STATUS_BAD_REQUEST,
-                 t->result ? doc_clone(t->result)
-                           : error_doc("directory_unavailable",
-                                       t->error ? t->error : "Directory unavailable"));
-    } else if (t->kind == TASK_MODELS) {
+    if (t->kind == TASK_MODELS) {
         t->reply(t->reply_ctx, t->result ? STATUS_OK : STATUS_BAD_GATEWAY,
                  t->result
                      ? doc_clone(t->result)
@@ -307,6 +301,15 @@ void ai_kick(App *a) {
         ai_done(&t->work, rc);
     }
 }
+static void directory_done(uv_work_t *w, int status) {
+    Task *t = w->data;
+    t->reply(t->reply_ctx, t->result ? STATUS_OK : STATUS_BAD_REQUEST,
+             t->result ? doc_clone(t->result)
+                       : error_doc("directory_unavailable", status     ? uv_strerror(status)
+                                                            : t->error ? t->error
+                                                                       : "Directory unavailable"));
+    task_free(t);
+}
 void enqueue_directory(App *a, Doc *selection, Reply reply, void *ctx) {
     Task *t = xcalloc(1, sizeof(*t));
     t->app = a;
@@ -321,8 +324,12 @@ void enqueue_directory(App *a, Doc *selection, Reply reply, void *ctx) {
             traces_push(&t->snapshot.traces, a->traces.v[i]);
         }
     }
-    queue(a, t);
-    ai_kick(a);
+    /* Local navigation must never wait for a model fetch, estimate or paid job. */
+    t->work.data = t;
+    int rc = uv_queue_work(&a->loop, &t->work, ai_worker, directory_done);
+    if (rc) {
+        directory_done(&t->work, rc);
+    }
 }
 void enqueue_models(App *a, Provider provider, Reply reply, void *ctx) {
     Task *t = xcalloc(1, sizeof(*t));

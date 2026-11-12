@@ -322,35 +322,65 @@ Doc *directory_page(App *a, const char *cwd, const char *path, size_t offset, ch
         *error = xstrdup("Directory is unavailable; links and parent traversal are not followed");
         return NULL;
     }
-    close(fd);
-    Doc *d = directory_manifest(a, cwd, error);
-    if (!d) {
+    DIR *dir = fdopendir(fd);
+    if (!dir) {
+        close(fd);
+        *error = fmt("Directory is unavailable: %s", strerror(errno));
         return NULL;
     }
-    J *items = arr(d), *files = get(root(d), "files");
-    size_t i, n, count = 0;
-    J *v;
-    size_t prefix = strlen(path);
-    yyjson_mut_arr_foreach(files, i, n, v) {
-        const char *p = sget(v, "path");
-        if (prefix) {
-            if (strncmp(p, path, prefix) || p[prefix] != '/') {
-                continue;
-            }
-            p += prefix + 1;
-        }
-        if (strchr(p, '/')) {
+    /* Browsing needs metadata for this folder only. The recursive, content-reading
+       manifest is reserved for an explicit analysis estimate. */
+    Doc *d = doc_new();
+    J *items = arr(d), *langs = obj(d);
+    put(d, root(d), "cwd", js(d, cwd));
+    put(d, root(d), "languages", langs);
+    put(d, root(d), "summary_scope", js(d, "directory"));
+    size_t count = 0;
+    struct dirent *de;
+    while ((de = readdir(dir))) {
+        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..") || !strcmp(de->d_name, ".git")) {
             continue;
         }
-        if (count >= offset && count < offset + 200) {
-            add(items, copy(d, v));
+        char *relative = *path ? fmt("%s/%s", path, de->d_name) : xstrdup(de->d_name);
+        char *full = fmt("%s/%s", cwd, relative);
+        bool private_data = !strcmp(full, a->cfg.data_dir);
+        free(full);
+        if (private_data) {
+            free(relative);
+            continue;
         }
+        struct stat st;
+        if (fstatat(fd, de->d_name, &st, AT_SYMLINK_NOFOLLOW)) {
+            put(d, root(d), "unreadable", ji(d, integer(get(root(d), "unreadable")) + 1));
+            free(relative);
+            continue;
+        }
+        if (S_ISREG(st.st_mode)) {
+            const char *lang = language(de->d_name);
+            put(d, langs, lang, ji(d, integer(get(langs, lang)) + st.st_size));
+            put(d, root(d), "file_count", ji(d, integer(get(root(d), "file_count")) + 1));
+            put(d, root(d), "total_bytes",
+                ji(d, integer(get(root(d), "total_bytes")) + st.st_size));
+        }
+        if (count >= offset && count - offset < 200) {
+            J *v = obj(d);
+            put(d, v, "path", js(d, relative));
+            put(d, v, "name", js(d, de->d_name));
+            put(d, v, "type",
+                js(d, S_ISDIR(st.st_mode)   ? "directory"
+                      : S_ISREG(st.st_mode) ? "file"
+                      : S_ISLNK(st.st_mode) ? "symlink"
+                                            : "special"));
+            stat_fields(d, v, &st);
+            add(items, v);
+        }
+        free(relative);
         count++;
     }
-    yyjson_mut_obj_remove_str(root(d), "files");
+    closedir(dir);
     put(d, root(d), "items", items);
     put(d, root(d), "path", js(d, path));
     put(d, root(d), "next_offset",
-        count > offset + 200 ? ji(d, (int64_t)(offset + 200)) : js(d, NULL));
+        count > offset && count - offset > 200 ? ji(d, (int64_t)(offset + 200)) : js(d, NULL));
     return d;
 }

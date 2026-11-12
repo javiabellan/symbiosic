@@ -16,6 +16,10 @@ before(async () => {
   const project = path.join(temporary, "sample project");
   fs.mkdirSync(project);
   fs.writeFileSync(path.join(project, "example.txt"), "Inline file preview.\n");
+  for (const name of ["alpha", "beta"]) {
+    fs.mkdirSync(path.join(project, name));
+    fs.writeFileSync(path.join(project, name, `${name}.txt`), name);
+  }
   for (const provider of ["claude", "codex"]) {
     const directory = path.join(temporary, provider);
     fs.mkdirSync(directory);
@@ -98,6 +102,85 @@ test("previews use the workspace; Settings is the only dialog", async () => {
   await page.locator(".bubble").first().waitFor();
   assert.deepEqual(errors, []);
   await page.close();
+});
+test("navigation loads before settings and folder browsing survives failed saved analysis", async () => {
+  const page = await browser.newPage();
+  let releaseSettings;
+  const pending = new Promise((resolve) => {
+    releaseSettings = resolve;
+  });
+  await page.route("**/api/settings", async (route) => {
+    await pending;
+    await route.continue();
+  });
+  await page.route("**/api/analysis?*", (route) => route.abort());
+  try {
+    await page.goto(url);
+    await page.locator(".directory-button").first().waitFor({ timeout: 2000 });
+    assert.equal(await page.locator("#settings").isDisabled(), true);
+    await page.locator(".directory-button").first().click();
+    await page.getByRole("button", { name: "example.txt", exact: true }).waitFor({ timeout: 2000 });
+    assert.doesNotMatch(await page.locator("#content").innerText(), /Loading/);
+  } finally {
+    releaseSettings();
+    await page.close();
+  }
+});
+test("a cold catalog selects a session as soon as discovery publishes it", async () => {
+  const page = await browser.newPage();
+  let first = true;
+  await page.route("**/api/state", async (route) => {
+    if (first) {
+      first = false;
+      await route.fulfill({
+        json: { catalog_revision: 0, groups: [], traces: [], ingestion_running: true },
+      });
+    } else {
+      await route.continue();
+    }
+  });
+  await page.goto(url);
+  await page.locator(".trace-header h1").waitFor({ timeout: 2000 });
+  assert.ok(await page.locator(".directory-button").count());
+  await page.close();
+});
+test("a late folder response cannot overwrite newer navigation", async () => {
+  const { page, errors } = await open();
+  let releaseAlpha, alphaRequested;
+  const pending = new Promise((resolve) => {
+    releaseAlpha = resolve;
+  });
+  const requested = new Promise((resolve) => {
+    alphaRequested = resolve;
+  });
+  await page.route("**/api/directory?*", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("path") === "alpha") {
+      alphaRequested();
+      await pending;
+    }
+    await route.continue();
+  });
+  try {
+    await page.locator(".directory-button").first().click();
+    await page.getByRole("button", { name: "alpha", exact: true }).click();
+    await requested;
+    await page.getByRole("button", { name: "beta", exact: true }).click();
+    await page.getByRole("button", { name: "beta.txt", exact: true }).waitFor();
+    const response = page.waitForResponse(
+      (res) => new URL(res.url()).searchParams.get("path") === "alpha",
+    );
+    releaseAlpha();
+    await response;
+    await page.waitForFunction(() =>
+      document.querySelector("#content .breadcrumb")?.textContent.includes("beta"),
+    );
+    assert.equal(await page.getByRole("button", { name: "beta.txt", exact: true }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: "alpha.txt", exact: true }).count(), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    releaseAlpha();
+    await page.close();
+  }
 });
 test("native title changes refresh the selected heading", async () => {
   const { page, errors } = await open();

@@ -44,6 +44,8 @@ On Windows the POSIX backend runs under the bundled MSYS runtime. Packaging buil
 
 Environment variables override `.env`. UI keys stay in memory; model defaults persist in `DATA_DIR/ai-settings.json`.
 
+The saved directory/session catalog loads at startup while discovery checks for updates. Folder browsing lists only the selected folder's metadata and runs independently of AI work. File counts, sizes, and language totals in the browser describe that folder; an explicit analysis estimate builds the full recursive workspace manifest.
+
 | Variable | Default |
 | --- | --- |
 | `CLAUDE_ROOT` | `~/.claude/projects` |

@@ -172,6 +172,7 @@ const expanded = new Set(),
   modelCatalog = new Map();
 let observer = null,
   loads = 0,
+  directoryLoad = 0,
   loadQueue = [];
 function scopeKey(s = scope) {
   return s?.type === "trace" ? `t:${s.id}` : `d:${s?.cwd || ""}`;
@@ -324,13 +325,19 @@ async function renderSelection() {
       return;
     }
     const params = scope.type === "trace" ? { id: scope.id } : { cwd: scope.cwd };
-    analysis = await api("/api/analysis?" + qs(params));
-    if (gen !== generation) {
-      return;
-    }
-    if (!analysis.id) {
-      analysis = null;
-    }
+    // Saved analysis is optional; it must not block local browsing.
+    api("/api/analysis?" + qs(params))
+      .then((data) => {
+        if (gen === generation) {
+          analysis = data.id ? data : null;
+          renderRight();
+        }
+      })
+      .catch((error) => {
+        if (gen === generation) {
+          fail(error);
+        }
+      });
     if (scope.type === "trace") {
       trace = await api("/api/trace?" + qs({ id: scope.id, overview: 1 }));
       if (gen !== generation) {
@@ -339,6 +346,7 @@ async function renderSelection() {
       overview = trace.items || [];
       renderTraceHeader();
     } else {
+      renderDirectoryHeader({});
       await renderDirectory(gen);
     }
     if (gen !== generation) {
@@ -401,8 +409,12 @@ function renderDirectoryHeader(data) {
   }
 }
 async function renderDirectory(gen = generation, offset = 0) {
-  const data = await api("/api/directory?" + qs({ cwd: scope.cwd, path: dirPath, offset }));
-  if (gen !== generation) {
+  const request = ++directoryLoad,
+    view = previewId,
+    cwd = scope.cwd,
+    path = dirPath;
+  const data = await api("/api/directory?" + qs({ cwd, path, offset }));
+  if (gen !== generation || request !== directoryLoad || view !== previewId) {
     return;
   }
   renderDirectoryHeader(data);
@@ -486,19 +498,12 @@ async function renderDirectory(gen = generation, offset = 0) {
   content.append(wrap);
   const foot = make("div", undefined, "directory-foot");
   foot.append(
-    make(
-      "span",
-      `${num(data.file_count)} files · ${formatBytes(data.total_bytes)} in this workspace`,
-    ),
+    make("span", `${num(data.file_count)} files · ${formatBytes(data.total_bytes)} in this folder`),
     make("span", "Read-only · on your machine"),
   );
   content.append(foot);
   if (data.unreadable) {
-    content.append(
-      notice(
-        `${data.unreadable} entries could not be read. Analysis will report incomplete coverage.`,
-      ),
-    );
+    content.append(notice(`${data.unreadable} entries in this folder could not be read.`));
   }
   if (data.next_offset != null) {
     content.append(
@@ -999,6 +1004,10 @@ function renderRight() {
       make("h2", "Session review", "right-heading"),
       make("p", "Select a directory or session.", "right-intro"),
     );
+    return;
+  }
+  if (!model) {
+    r.append(make("div", "Analysis settings are loading…", "muted"));
     return;
   }
   if (analysis) {
@@ -1792,15 +1801,13 @@ async function refreshState() {
         renderTraceHeader();
       }
     }
+    if (!scope && next.traces.length) {
+      const selected = next.traces[0];
+      selectScope({ type: "trace", id: selected.trace_id }).catch(fail);
+    } else if (first) {
+      renderWelcome();
+    }
     if (first) {
-      const group = next.groups?.[0];
-      if (group) {
-        expanded.add(group.group === "Unknown directory" ? "" : group.group);
-        const selected = next.traces[0];
-        await selectScope({ type: "trace", id: selected.trace_id });
-      } else {
-        renderWelcome();
-      }
       const running = next.recent_jobs?.find((j) => ["running", "queued"].includes(j.state));
       if (running) {
         activeJob = running.id;
@@ -1811,16 +1818,21 @@ async function refreshState() {
     fail(e);
   } finally {
     polling = false;
+    if (!scope && state?.ingestion_running) {
+      setTimeout(refreshState, 100);
+    }
   }
 }
+$("settings").disabled = true;
+refreshState();
 (async () => {
   try {
     [settings, domains] = await Promise.all([api("/api/settings"), api("/api/domains")]);
     model = clone(settings.chat);
-    await refreshState();
+    $("settings").disabled = false;
+    renderRight();
   } catch (e) {
     fail(e);
-    renderWelcome();
   }
 })();
 setInterval(() => {

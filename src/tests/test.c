@@ -772,6 +772,7 @@ int main(void) {
     test_native_titles(&a);
     test_catalog(&a);
     test_symbiosic(&a);
+    test_directory_browsing(&a);
     test_prompt_newlines(&a);
     test_chat_restart(&a);
     test_chat_budget(&a);

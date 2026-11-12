@@ -1,4 +1,94 @@
 /* Behavior tests for the domain-aware, single-item analysis engine. */
+typedef struct {
+    int calls;
+    Doc *result;
+} DirectoryReply;
+static void directory_reply(void *ctx, int status, Doc *result) {
+    DirectoryReply *reply = ctx;
+    CHECK(status == STATUS_OK);
+    reply->calls++;
+    reply->result = result;
+}
+static void test_directory_browsing(App *a) {
+    char *error = NULL, *project = fmt("%s/browser", a->cfg.data_dir);
+    CHECK(mkdir_private(project, &error));
+    Trace *t = a->traces.v[0];
+    char *old_cwd = xstrdup(sget(meta(t), "cwd")), *old_data = a->cfg.data_dir;
+    put(t->doc, meta(t), "cwd", js(t->doc, project));
+    a->cfg.data_dir = fmt("%s/private", project);
+    CHECK(mkdir_private(a->cfg.data_dir, &error));
+    char *nested = fmt("%s/nested", project), *git = fmt("%s/.git", project);
+    CHECK(mkdir_private(nested, &error) && mkdir_private(git, &error));
+    char *file = fmt("%s/child.py", nested);
+    CHECK(atomic_write(file, "nested only", 11, &error));
+    free(file);
+    char *link = fmt("%s/escape", project);
+    CHECK(symlink(nested, link) == 0);
+    for (int i = 0; i < 205; i++) {
+        file = fmt("%s/%03d.txt", project, i);
+        CHECK(atomic_write(file, "x", 1, &error));
+        free(file);
+    }
+    Doc *page = directory_page(a, project, "", 0, &error);
+    CHECK(page && !error);
+    CHECK(yyjson_mut_arr_size(get(root(page), "items")) == 200);
+    CHECK(integer(get(root(page), "next_offset")) == 200);
+    CHECK(integer(get(root(page), "file_count")) == 205);
+    CHECK(integer(get(root(page), "total_bytes")) == 205);
+    size_t i, n;
+    J *v;
+    yyjson_mut_arr_foreach(get(root(page), "items"), i, n, v) {
+        CHECK(!strchr(sget(v, "path"), '/'));
+        CHECK(strcmp(sget(v, "name"), "private") && strcmp(sget(v, "name"), ".git"));
+    }
+    doc_free(page);
+    page = directory_page(a, project, "", 200, &error);
+    CHECK(page && !error && yyjson_mut_arr_size(get(root(page), "items")) == 7);
+    CHECK(yyjson_mut_is_null(get(root(page), "next_offset")));
+    doc_free(page);
+    page = directory_page(a, project, "nested", 0, &error);
+    CHECK(page && !error && yyjson_mut_arr_size(get(root(page), "items")) == 1);
+    CHECK(integer(get(root(page), "total_bytes")) == 11);
+    CHECK(
+        !strcmp(sget(yyjson_mut_arr_get(get(root(page), "items"), 0), "path"), "nested/child.py"));
+    doc_free(page);
+    const char *blocked[] = {"../", "escape", ".git"};
+    for (size_t j = 0; j < 3; j++) {
+        page = directory_page(a, project, blocked[j], 0, &error);
+        CHECK(!page && error);
+        free(error);
+        error = NULL;
+    }
+    /* A busy AI queue must not hold either a directory listing or file preview. */
+    uv_loop_init(&a->loop);
+    a->ai_busy = true;
+    DirectoryReply listing = {0}, preview = {0};
+    Doc *selection = doc_new();
+    put(selection, root(selection), "cwd", js(selection, project));
+    put(selection, root(selection), "path", js(selection, "nested"));
+    enqueue_directory(a, selection, directory_reply, &listing);
+    selection = doc_new();
+    put(selection, root(selection), "cwd", js(selection, project));
+    put(selection, root(selection), "path", js(selection, "nested/child.py"));
+    put(selection, root(selection), "file", jb(selection, true));
+    enqueue_directory(a, selection, directory_reply, &preview);
+    uv_run(&a->loop, UV_RUN_DEFAULT);
+    CHECK(listing.calls == 1 && preview.calls == 1 && a->ai_busy);
+    CHECK(!strcmp(sget(root(preview.result), "text"), "nested only"));
+    CHECK(uv_loop_close(&a->loop) == 0);
+    a->ai_busy = false;
+    doc_free(listing.result);
+    doc_free(preview.result);
+    put(t->doc, meta(t), "cwd", js(t->doc, old_cwd));
+    free(a->cfg.data_dir);
+    a->cfg.data_dir = old_data;
+    free(old_cwd);
+    free(project);
+    free(nested);
+    free(git);
+    free(link);
+}
+
 static int detection_calls, retrieval_calls;
 static Transport retrieval_fake(const char *endpoint, const char *body, const char *key) {
     Doc *req = parse(body);

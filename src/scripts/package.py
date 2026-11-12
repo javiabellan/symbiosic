@@ -16,6 +16,7 @@ import zlib
 
 SRC = Path(__file__).resolve().parent.parent
 APP = 'Symbiosic'
+VERSION = '0.1.1'
 SYSTEM_LIBS = {'libc.so.6', 'libm.so.6', 'libpthread.so.0', 'libdl.so.2', 'librt.so.1', 'ld-linux-x86-64.so.2'}
 
 def run(*args):
@@ -111,7 +112,7 @@ def macos(stage, out, target, binary):
         versions.extend(tuple(map(int, value.split('.'))) for value in re.findall(r'\bminos\s+([\d.]+)', run('otool', '-l', executable)))
     minimum_os = '.'.join(map(str, max(versions)))
     with (contents/'Info.plist').open('wb') as file:
-        plistlib.dump({'CFBundleName':APP,'CFBundleDisplayName':APP,'CFBundleIdentifier':'io.github.javiabellan.symbiosic','CFBundleVersion':'1','CFBundleShortVersionString':'0.1.0','CFBundlePackageType':'APPL','CFBundleExecutable':APP,'CFBundleIconFile':'AppIcon','LSMinimumSystemVersion':minimum_os,'NSHighResolutionCapable':True,'NSLocalNetworkUsageDescription':'Symbiosic connects to its local workspace server.','NSAppTransportSecurity':{'NSAllowsLocalNetworking':True}},file)
+        plistlib.dump({'CFBundleName':APP,'CFBundleDisplayName':APP,'CFBundleIdentifier':'io.github.javiabellan.symbiosic','CFBundleVersion':VERSION,'CFBundleShortVersionString':VERSION,'CFBundlePackageType':'APPL','CFBundleExecutable':APP,'CFBundleIconFile':'AppIcon','LSMinimumSystemVersion':minimum_os,'NSHighResolutionCapable':True,'NSLocalNetworkUsageDescription':'Symbiosic connects to its local workspace server.','NSAppTransportSecurity':{'NSAllowsLocalNetworking':True}},file)
     run('codesign','--force','--deep','--sign','-',app)
     image = stage/'image'
     image.mkdir()
