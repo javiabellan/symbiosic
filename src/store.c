@@ -17,7 +17,9 @@
 static bool private_acl(const char *path, char **error) {
     HANDLE token;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
-        *error = fmt("Cannot read Windows identity (%lu)", GetLastError());
+        if (error) {
+            *error = fmt("Cannot read Windows identity (%lu)", (unsigned long)GetLastError());
+        }
         return false;
     }
 
@@ -25,7 +27,9 @@ static bool private_acl(const char *path, char **error) {
     GetTokenInformation(token, TokenUser, NULL, 0, &size);
     TOKEN_USER *user = xmalloc(size);
     if (!GetTokenInformation(token, TokenUser, user, size, &size)) {
-        *error = fmt("Cannot read Windows identity (%lu)", GetLastError());
+        if (error) {
+            *error = fmt("Cannot read Windows identity (%lu)", (unsigned long)GetLastError());
+        }
         CloseHandle(token);
         free(user);
         return false;
@@ -53,7 +57,9 @@ static bool private_acl(const char *path, char **error) {
     LocalFree(acl);
     free(user);
     if (status != ERROR_SUCCESS) {
-        *error = fmt("Cannot make Windows data private (%lu)", status);
+        if (error) {
+            *error = fmt("Cannot make Windows data private (%lu)", (unsigned long)status);
+        }
         return false;
     }
     return true;
@@ -497,8 +503,7 @@ static bool same_stat(Trace *t, struct stat *st) {
 #endif
     return t && t->dev == (uint64_t)st->st_dev && t->ino == (uint64_t)st->st_ino &&
            t->size == (uint64_t)st->st_size && t->mtime_sec == mt.tv_sec &&
-           t->mtime_nsec == mt.tv_nsec &&
-           !boolean(get(get(root(t->doc), "meta"), "source_missing"));
+           t->mtime_nsec == mt.tv_nsec && !jbool(get(get(root(t->doc), "meta"), "source_missing"));
 }
 typedef struct {
     App *a;
@@ -689,7 +694,7 @@ static void apply_titles(App *a, Traces *traces) {
     for (size_t i = 0; i < traces->n; i++) {
         Trace *t = traces->v[i];
         J *meta = get(root(t->doc), "meta");
-        if (boolean(get(meta, "subagent")) || !strcmp(sget(meta, "title_kind"), TITLE_CUSTOM)) {
+        if (jbool(get(meta, "subagent")) || !strcmp(sget(meta, "title_kind"), TITLE_CUSTOM)) {
             continue;
         }
 
@@ -744,7 +749,7 @@ void discover(App *a, Traces *in, Traces *out, char **error) {
         struct stat st;
         int stat_result = lstat(old->path, &st);
         bool missing = (stat_result && errno == ENOENT) || (!stat_result && !S_ISREG(st.st_mode));
-        if (!missing || boolean(get(get(root(old->doc), "meta"), "source_missing"))) {
+        if (!missing || jbool(get(get(root(old->doc), "meta"), "source_missing"))) {
             trace_retain(old);
             traces_push(out, old);
             continue;
@@ -783,7 +788,7 @@ void discover(App *a, Traces *in, Traces *out, char **error) {
         if (*native) {
             for (size_t k = 0; k < out->n; k++) {
                 J *pm = get(root(out->v[k]->doc), "meta");
-                if (k != i && !boolean(get(pm, "subagent")) &&
+                if (k != i && !jbool(get(pm, "subagent")) &&
                     !strcmp(sget(pm, "provider"), sget(m, "provider")) &&
                     !strcmp(sget(pm, "native_session_id"), native)) {
                     parent = out->v[k]->id;

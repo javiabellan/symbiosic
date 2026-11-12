@@ -182,7 +182,7 @@ static char *source_full(J *source, size_t budget, bool *full) {
         size_t offset = 0;
         do {
             Doc *page = source_read(source, sget(v, "path"), offset, 32768);
-            if (get(root(page), "error") || boolean(get(root(page), "binary"))) {
+            if (get(root(page), "error") || jbool(get(root(page), "binary"))) {
                 doc_free(page);
                 buf_free(&b);
                 return NULL;
@@ -425,7 +425,7 @@ Doc *estimate_build(App *a, Snapshot *snap, Doc *selection, char **error) {
     put(d, cov, "level", directory ? js(d, NULL) : ji(d, 5));
     put(d, cov, "mode", js(d, full ? "full" : "agentic"));
     put(d, cov, "input_budget", ji(d, (int64_t)budget));
-    put(d, cov, "incomplete", jb(d, !full || boolean(get(root(source), "ingestion_incomplete"))));
+    put(d, cov, "incomplete", jb(d, !full || jbool(get(root(source), "ingestion_incomplete"))));
     put(d, cov, "ai_provider", js(d, provider_name(model.provider)));
     Config cfg = a->cfg;
     cfg.chat = model;
@@ -668,7 +668,7 @@ static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, ReviewKind 
                 put(d, r, "result", copy(d, root(result)));
                 if (!chat) {
                     J *res = get(r, "result");
-                    bool incomplete = agentic || boolean(get(get(entry, "coverage"), "incomplete"));
+                    bool incomplete = agentic || jbool(get(get(entry, "coverage"), "incomplete"));
                     if (incomplete) {
                         put(d, res, "coverage", js(d, "partial"));
                         add(get(res, "limitations"),
@@ -730,7 +730,7 @@ static Doc *run_review(App *a, J *quote, J *entry, J *extra_history, ReviewKind 
 finished:
     free(domain);
     put(d, r, "cost_usd",
-        boolean(get(r, "pricing_unresolved"))
+        jbool(get(r, "pricing_unresolved"))
             ? js(d, NULL)
             : jnum(d, (integer(get(usage, "input_tokens")) * model.input_rate +
                        integer(get(usage, "output_tokens")) * model.output_rate) /
@@ -821,7 +821,7 @@ Doc *review_chat_turn(App *a, Doc *original, Snapshot *snap, const char *text, c
     J *v;
     bool pending = false;
     yyjson_mut_arr_foreach(get(root(chat), "messages"), i, n, v) {
-        if (boolean(get(v, "completed")) || i == n - 1) {
+        if (jbool(get(v, "completed")) || i == n - 1) {
             msg(extra, root(extra), sget(v, "role"), sget(v, "text"));
             if (i == n - 1 && !strcmp(sget(v, "role"), "user") && !strcmp(sget(v, "text"), text)) {
                 pending = true;

@@ -144,8 +144,8 @@ static Transport fake(const char *endpoint, const char *body, const char *key) {
     }
     {
         CHECK(!strcmp(endpoint, "responses"));
-        CHECK(!boolean(get(root(request), "store")));
-        CHECK(!boolean(get(root(request), "parallel_tool_calls")));
+        CHECK(!jbool(get(root(request), "store")));
+        CHECK(!jbool(get(root(request), "parallel_tool_calls")));
         CHECK(!strcmp(sget(get(root(request), "reasoning"), "effort"), "none"));
         J *output = arr(response);
         put(response, r, "output", output);
@@ -261,7 +261,7 @@ static void test_normalizers(App *a, const char *cp, const char *xp) {
     fixture("tests/fixtures/claude.jsonl", bad);
     append(bad, "this is not json\n{\"type\":\"new_unknown_variant\"}\n");
     Trace *malformed = norm(bad, "claude", NULL);
-    CHECK(boolean(get(get(meta(malformed), "diagnostics"), "coverage_incomplete")));
+    CHECK(jbool(get(get(meta(malformed), "diagnostics"), "coverage_incomplete")));
     CHECK(integer(get(get(meta(malformed), "diagnostics"), "malformed_lines")) == 1);
     trace_release(malformed);
     unlink(bad);
@@ -327,7 +327,7 @@ static void test_tools(App *a) {
     args = parse("{\"query\":\"make test\",\"trace_id\":null,\"offset\":0,\"limit\":1}");
     r = tool_run(&s, "search_events", root(args));
     CHECK(integer(get(root(r), "total_matches")) == 2);
-    CHECK(boolean(get(root(r), "truncated")));
+    CHECK(jbool(get(root(r), "truncated")));
     doc_free(r);
     doc_free(args);
     args = parse("{\"trace_id\":\"00000000000000000000000000000000\",\"start_seq\":0,\"limit\":1,"
@@ -439,7 +439,7 @@ static void test_fidelity(App *a) {
             CHECK(sys < strstr(text, "USER_MARKER"));
             CHECK(!strstr(sys + 1, "SYSTEM_MARKER"));
         }
-        CHECK(boolean(get(root(coverage), "incomplete")) == (l < 6));
+        CHECK(jbool(get(root(coverage), "incomplete")) == (l < 6));
         CHECK(token_count(text) <= totals[l - 1] + 8);
         free(text);
         doc_free(coverage);
@@ -708,7 +708,7 @@ static void test_concurrency(App *a, const char *cp) {
     CHECK(calls == before + 1);
     CHECK(!strcmp(sent_body, frozen));
     Doc *summary = trace_summary(trace_find(&a->traces, cited_id), &a->analyses);
-    CHECK(boolean(get(get(root(summary), "analysis"), "outdated")));
+    CHECK(jbool(get(get(root(summary), "analysis"), "outdated")));
     doc_free(summary);
     uv_loop_close(&a->loop);
     mode = 0;
@@ -801,7 +801,7 @@ int main(void) {
     CHECK(!e);
     bool missing = false;
     for (size_t i = 0; i < out.n; i++) {
-        if (boolean(get(meta(out.v[i]), "source_missing"))) {
+        if (jbool(get(meta(out.v[i]), "source_missing"))) {
             missing = true;
         }
     }

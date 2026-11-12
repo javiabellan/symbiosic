@@ -108,7 +108,7 @@ Doc *provider_request(Config *c, ModelRole decision, J *request, const char **en
         J *item;
         yyjson_mut_arr_foreach(get(request, "input"), i, n, item) {
             const char *type = sget(item, "type");
-            if (boolean(get(item, "_provider_native"))) {
+            if (jbool(get(item, "_provider_native"))) {
                 if (get(item, "_provider_message")) {
                     add(messages, copy(d, get(item, "_provider_message")));
                 }
@@ -402,7 +402,7 @@ Doc *provider_models(Config *c, Provider p, char **error) {
                 js(result, limit > 0 ? source : "Enter the provider's documented limits"));
             add(models, v);
         }
-        if (p == AI_ANTHROPIC && boolean(get(root(d), "has_more"))) {
+        if (p == AI_ANTHROPIC && jbool(get(root(d), "has_more"))) {
             const char *last = sget(root(d), "last_id");
             /* IDs are URL data, never paths or arbitrary hosts. */
             bool safe = *last;
@@ -464,7 +464,7 @@ bool model_config_parse(J *v, ModelConfig *m) {
     snprintf(m->thinking, sizeof(m->thinking), "%s", thinking);
     m->input_rate = number(get(v, "input_rate"));
     m->output_rate = number(get(v, "output_rate"));
-    m->pricing_known = boolean(get(v, "pricing_known"));
+    m->pricing_known = jbool(get(v, "pricing_known"));
     if (!isfinite(m->input_rate) || !isfinite(m->output_rate) || m->input_rate < 0 ||
         m->output_rate < 0) {
         return false;

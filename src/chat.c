@@ -34,7 +34,7 @@ static J *bounded_history(Doc *d, J *messages, const char *text) {
     for (size_t i = 0; i + 1 < n; i++) {
         J *user = yyjson_mut_arr_get(messages, i), *assistant = yyjson_mut_arr_get(messages, i + 1);
         if (strcmp(sget(user, "role"), "user") || strcmp(sget(assistant, "role"), "assistant") ||
-            !boolean(get(user, "completed")) || !boolean(get(assistant, "completed"))) {
+            !jbool(get(user, "completed")) || !jbool(get(assistant, "completed"))) {
             continue;
         }
         J *pair[] = {user, assistant};
@@ -121,7 +121,7 @@ Doc *chat_turn(App *a, Doc *original, Snapshot *s, const char *text, char **erro
      * chat. */
     J *last = yyjson_mut_arr_get_last(messages);
     if (!last || strcmp(sget(last, "role"), "user") || strcmp(sget(last, "text"), text) ||
-        boolean(get(last, "completed"))) {
+        jbool(get(last, "completed"))) {
         message_add(chat, messages, "user", text, CHAT_PENDING);
     }
     J *refs = arr(chat);

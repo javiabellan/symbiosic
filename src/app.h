@@ -129,7 +129,7 @@ const char *str(J *v);
 const char *sget(J *o, const char *k);
 int64_t integer(J *v);
 double number(J *v);
-bool boolean(J *v);
+bool jbool(J *v);
 J *obj(Doc *d);
 J *arr(Doc *d);
 J *js(Doc *d, const char *s);

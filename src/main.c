@@ -131,7 +131,7 @@ static void ai_worker(uv_work_t *w) {
         App local = *a;
         local.traces = t->snapshot.traces;
         J *sel = root(t->selection);
-        if (boolean(get(sel, "file"))) {
+        if (jbool(get(sel, "file"))) {
             t->result = directory_read(sget(sel, "cwd"), sget(sel, "path"),
                                        (size_t)integer(get(sel, "offset")), 8192, NULL);
         } else {
@@ -192,12 +192,12 @@ static void ai_worker(uv_work_t *w) {
             put(job, row, "outcome_unknown", copy(job, get(r, "outcome_unknown")));
             put(job, j, "failed", ji(job, integer(get(j, "failed")) + 1));
         } else {
-            put(job, row, "status", js(job, boolean(get(r, "reused")) ? "cached" : "completed"));
+            put(job, row, "status", js(job, jbool(get(r, "reused")) ? "cached" : "completed"));
             put(job, row, "analysis_id", copy(job, get(r, "id")));
             put(job, row, "usage",
-                boolean(get(r, "reused")) ? js(job, NULL) : copy(job, get(r, "usage")));
+                jbool(get(r, "reused")) ? js(job, NULL) : copy(job, get(r, "usage")));
             put(job, row, "cost_usd",
-                boolean(get(r, "reused")) ? jnum(job, 0) : copy(job, get(r, "cost_usd")));
+                jbool(get(r, "reused")) ? jnum(job, 0) : copy(job, get(r, "cost_usd")));
             put(job, row, "result_not_saved", copy(job, get(r, "result_not_saved")));
             put(job, j, "succeeded", ji(job, integer(get(j, "succeeded")) + 1));
         }
@@ -342,7 +342,7 @@ void enqueue_estimate(App *a, Doc *selection, Reply reply, void *ctx) {
     t->reply = reply;
     t->reply_ctx = ctx;
     /* Quotes retain immutable trace references; AI inputs are token-budgeted later. */
-    bool all = boolean(get(root(selection), "all"));
+    bool all = jbool(get(root(selection), "all"));
     J *ids = get(root(selection), "trace_ids");
     for (size_t i = 0; i < a->traces.n; i++) {
         Trace *tr = a->traces.v[i];

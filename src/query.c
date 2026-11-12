@@ -7,7 +7,7 @@ static J *meta(Trace *t) {
 }
 Doc *analysis_index(Doc *analysis) {
     Doc *d = doc_clone(analysis);
-    if (boolean(get(root(d), "result_not_saved"))) {
+    if (jbool(get(root(d), "result_not_saved"))) {
         return d;
     }
     const char *keys[] = {"request",        "request_body", "raw_response", "response",
@@ -137,7 +137,7 @@ static void accumulate(Doc *d, J *r, Trace *t, Docs *analyses) {
     inc(d, r, "known_tool_results", integer(get(tr, "success")) + integer(get(tr, "failure")));
     inc(d, r, "failed_tool_results", integer(get(tr, "failure")));
     inc(d, r, "unknown_tool_results", integer(get(tr, "unknown")));
-    if (boolean(get(get(m, "diagnostics"), "coverage_incomplete"))) {
+    if (jbool(get(get(m, "diagnostics"), "coverage_incomplete"))) {
         inc(d, r, "coverage_incomplete", 1);
     }
     if (*sget(m, "parent_trace_id") || *sget(m, "parent_native_session_id")) {
@@ -152,7 +152,7 @@ static void accumulate(Doc *d, J *r, Trace *t, Docs *analyses) {
     }
     J *usage = get(s, "usage");
     inc(d, u, "traces", 1);
-    if (!boolean(get(usage, "known"))) {
+    if (!jbool(get(usage, "known"))) {
         inc(d, u, "unknown_usage_traces", 1);
     }
     const char *components[] = {"input_tokens",
@@ -204,7 +204,7 @@ static void accumulate(Doc *d, J *r, Trace *t, Docs *analyses) {
                 ca = obj(d);
                 put(d, cats, name, ca);
             }
-            const char *label = yyjson_mut_is_bool(value)   ? (boolean(value) ? "true" : "false")
+            const char *label = yyjson_mut_is_bool(value)   ? (jbool(value) ? "true" : "false")
                                 : yyjson_mut_is_null(value) ? "unknown"
                                                             : str(value);
             inc(d, ca, label, 1);
@@ -245,7 +245,7 @@ static J *reference(Doc *d, Trace *t) {
 static void coverage(Doc *d, Snapshot *s) {
     size_t incomplete = 0;
     for (size_t i = 0; i < s->traces.n; i++) {
-        if (boolean(get(get(meta(s->traces.v[i]), "diagnostics"), "coverage_incomplete"))) {
+        if (jbool(get(get(meta(s->traces.v[i]), "diagnostics"), "coverage_incomplete"))) {
             incomplete++;
         }
     }

@@ -219,7 +219,7 @@ char *fidelity_render(Trace *t, int level, Doc **coverage) {
         add(levels, ji(d, (int64_t)fidelity_tokens(f, l)));
     }
     put(d, r, "trace_tokens", ji(d, (int64_t)fidelity_tokens(f, level)));
-    bool incomplete = boolean(get(diag, "coverage_incomplete"));
+    bool incomplete = jbool(get(diag, "coverage_incomplete"));
     Buf b = {0};
     buf_add(&b, f->preamble);
     buf_add(&b, f->labels[level - 1]);

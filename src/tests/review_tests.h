@@ -62,7 +62,7 @@ static void test_symbiosic(App *a) {
     doc_free(result);
     mode = 1;
     result = analyze_entry(a, root(quote), entry, &a->analyses, &error);
-    CHECK(get(root(result), "error") && boolean(get(root(result), "outcome_unknown")));
+    CHECK(get(root(result), "error") && jbool(get(root(result), "outcome_unknown")));
     doc_free(result);
     mode = 2;
     result = analyze_entry(a, root(quote), entry, &a->analyses, &error);

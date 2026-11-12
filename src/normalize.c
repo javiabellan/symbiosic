@@ -226,7 +226,7 @@ static void claude(Normal *n, J *r) {
     if (*sget(r, "parentSessionId")) {
         put(n->d, n->meta, "parent_native_session_id", copy(n->d, get(r, "parentSessionId")));
     }
-    if (boolean(get(r, "isSidechain"))) {
+    if (jbool(get(r, "isSidechain"))) {
         put(n->d, n->meta, "subagent", jb(n->d, true));
         if (*sget(r, "sessionId")) {
             put(n->d, n->meta, "parent_native_session_id", copy(n->d, get(r, "sessionId")));
@@ -250,7 +250,7 @@ static void claude(Normal *n, J *r) {
         event(n, "system", "context_limit");
     }
     J *content = get(m, "content");
-    bool synthetic = boolean(get(r, "isMeta"));
+    bool synthetic = jbool(get(r, "isMeta"));
     bool uncertain = get(r, "userType") && !is(get(r, "userType"), "external");
     if (yyjson_mut_is_str(content)) {
         message(n, type, str(content), (synthetic) ? MESSAGE_SYNTHETIC : MESSAGE_NATIVE,
@@ -279,7 +279,7 @@ static void claude(Normal *n, J *r) {
                 text_field(n, e, s);
                 free(s);
                 if (yyjson_mut_is_bool(get(b, "is_error"))) {
-                    put(n->d, e, "ok", jb(n->d, !boolean(get(b, "is_error"))));
+                    put(n->d, e, "ok", jb(n->d, !jbool(get(b, "is_error"))));
                 }
             } else if (!strcmp(bt, "image")) {
                 message(n, type, "[image omitted]",
@@ -479,8 +479,7 @@ static void stats(Normal *n) {
         if (!strcmp(kind, "tool_result")) {
             J *ok = get(e, "ok");
             increment(d, out,
-                      yyjson_mut_is_bool(ok) ? (boolean(ok) ? "success" : "failure") : "unknown",
-                      1);
+                      yyjson_mut_is_bool(ok) ? (jbool(ok) ? "success" : "failure") : "unknown", 1);
         }
         double t;
         if (timestamp(sget(e, "ts"), &t)) {
