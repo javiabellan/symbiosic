@@ -220,7 +220,7 @@ def windows(stage, out, target, binary):
     native_object = run('cygpath', '-m', stage/'icon.o').strip()
     native_source = run('cygpath', '-m', SRC/'packaging/windows.c').strip()
     native_exe = run('cygpath', '-m', root/'Symbiosic.exe').strip()
-    run('/mingw64/bin/windres', '--preprocessor', compiler, '-O', 'coff', native_resource, '-o', native_object)
+    run('/mingw64/bin/windres', '--preprocessor', compiler, '--preprocessor-arg=-E', '--preprocessor-arg=-xc-header', '--preprocessor-arg=-DRC_INVOKED', '-O', 'coff', native_resource, '-o', native_object)
     run('/mingw64/bin/gcc', '-municode', '-static', native_source, native_object, '-lshell32', '-o', native_exe)
     # Distribute MSYS package notices alongside the runtime.
     notices = Path('/usr/share/licenses')
